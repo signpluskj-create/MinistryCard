@@ -1,5 +1,10 @@
+const DEFAULT_API_URL =
+  (typeof window !== "undefined" &&
+    window.__ENV__ &&
+    window.__ENV__.API_URL) ||
+  "https://script.google.com/macros/s/AKfycbx1O_Ab6n1j2py4A6Qck48fSY8N_J1wTiZF97y09HzW21kHgCinR1K2rCWiZmONG8mJ/exec";
 const state = {
-  apiUrl: "",
+  apiUrl: DEFAULT_API_URL,
   user: null,
   data: {
     cards: [],
@@ -162,20 +167,15 @@ const setLoading = (isLoading, message) => {
 };
 
 const loadApiUrl = () => {
-  const stored = localStorage.getItem("ministry_api_url") || "";
-  state.apiUrl = stored;
-  elements.apiUrlInput.value = stored;
-  elements.configPanel.classList.toggle("hidden", Boolean(stored));
+  state.apiUrl = DEFAULT_API_URL;
+  if (elements.apiUrlInput) {
+    elements.apiUrlInput.value = DEFAULT_API_URL;
+  }
+  elements.configPanel.classList.add("hidden");
 };
 
 const saveApiUrl = () => {
-  const value = elements.apiUrlInput.value.trim();
-  if (!value) {
-    alert("앱스 스크립트 URL을 입력해 주세요.");
-    return;
-  }
-  localStorage.setItem("ministry_api_url", value);
-  state.apiUrl = value;
+  state.apiUrl = DEFAULT_API_URL;
   elements.configPanel.classList.add("hidden");
 };
 
