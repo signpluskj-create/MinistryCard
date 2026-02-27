@@ -11,7 +11,8 @@ const state = {
     areas: [],
     completions: [],
     visits: [],
-    evangelists: []
+    evangelists: [],
+    assignments: []
   },
   selectedArea: null,
   selectedCard: null,
@@ -24,19 +25,26 @@ const state = {
   filterVisit: "all",
   editingVisit: null,
   statusTimer: null,
-  scrollToSelectedCard: false
+  scrollToSelectedCard: false,
+  participantsToday: [],
+  carAssignments: [],
+  currentMenu: "cards"
 };
 
 const elements = {
   configPanel: document.getElementById("config-panel"),
   loginPanel: document.getElementById("login-panel"),
   dashboard: document.getElementById("dashboard"),
+  menuToggle: document.getElementById("menu-toggle"),
+  menuClose: document.getElementById("menu-close"),
+  sideMenu: document.getElementById("side-menu"),
   nameInput: document.getElementById("name-input"),
   passwordInput: document.getElementById("password-input"),
   loginButton: document.getElementById("login-button"),
   apiUrlInput: document.getElementById("api-url-input"),
   saveApiUrl: document.getElementById("save-api-url"),
   userInfo: document.getElementById("user-info"),
+  carInfo: document.getElementById("car-info"),
   areaList: document.getElementById("area-list"),
   areaTitle: document.getElementById("area-title"),
   cardList: document.getElementById("card-list"),
@@ -48,15 +56,23 @@ const elements = {
   visitNote: document.getElementById("visit-note"),
   visitTitle: document.getElementById("visit-title"),
   statusMessage: document.getElementById("status-message"),
-  leaderActions: document.getElementById("leader-actions"),
-  startService: document.getElementById("start-service"),
   areaOverlay: document.getElementById("area-overlay"),
   closeAreas: document.getElementById("close-areas"),
   areaListOverlay: document.getElementById("area-list-overlay"),
+  carAssignOverlay: document.getElementById("car-assign-overlay"),
+  closeCarAssign: document.getElementById("close-car-assign"),
+  carAssignEvangelistList: document.getElementById("car-assign-evangelist-list"),
+  carAssignSelected: document.getElementById("car-assign-selected"),
+  carAssignMeta: document.getElementById("car-assign-meta"),
+  carAssignAuto: document.getElementById("car-assign-auto"),
+  carAssignAdd: document.getElementById("car-assign-add"),
+  carAssignReset: document.getElementById("car-assign-reset"),
+  carAssignSave: document.getElementById("car-assign-save"),
   adminPanel: document.getElementById("admin-panel"),
   completionList: document.getElementById("completion-list"),
   visitList: document.getElementById("visit-list"),
   evangelistList: document.getElementById("evangelist-list"),
+  carAssignPanel: document.getElementById("car-assign-panel"),
   bannedCardList: document.getElementById("banned-card-list"),
   searchInput: document.getElementById("search-input"),
   searchButton: document.getElementById("search-button"),
@@ -102,7 +118,7 @@ const formatDate = (value) => {
 const toISODate = (value) => {
   const d = parseVisitDate(value);
   if (!d) {
-    return todayISO();
+    return "";
   }
   const z = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
   return z.toISOString().slice(0, 10);
@@ -166,6 +182,548 @@ const setLoading = (isLoading, message) => {
     elements.loadingText.textContent = message;
   }
   elements.loadingIndicator.classList.toggle("hidden", !isLoading);
+};
+
+const renderMyCarInfo = () => {
+  const box = elements.carInfo;
+  if (!box || !state.user) {
+    return;
+  }
+  const rows = state.data.assignments || [];
+  const name = state.user.name;
+  if (!rows.length || !name) {
+    box.textContent = "";
+    box.classList.add("hidden");
+    return;
+  }
+  const myRow =
+    rows.find((row) => String(row["이름"] || "") === String(name)) || null;
+  if (!myRow) {
+    box.textContent = "";
+    box.classList.add("hidden");
+    return;
+  }
+  const carId = String(myRow["차량"] || "");
+  if (!carId) {
+    box.textContent = "";
+    box.classList.add("hidden");
+    return;
+  }
+  const sameCar = rows.filter(
+    (row) => String(row["차량"] || "") === carId
+  );
+  const driverRow =
+    sameCar.find((row) => String(row["역할"] || "") === "운전자") || null;
+  const driverName = driverRow ? String(driverRow["이름"] || "") : "";
+  const passengerNames = sameCar
+    .filter((row) => String(row["역할"] || "") !== "운전자")
+    .map((row) => String(row["이름"] || ""))
+    .filter(Boolean);
+  const passengers = Array.from(new Set(passengerNames));
+  const textParts = [];
+  textParts.push(`차량 ${carId}`);
+  if (driverName) {
+    textParts.push(`운전자: ${driverName}`);
+  }
+  if (passengers.length) {
+    textParts.push(passengers.join(", "));
+  }
+  box.textContent = textParts.join(" | ");
+  box.classList.remove("hidden");
+  const defaultSize = 15;
+  const minSize = 11;
+  let size = defaultSize;
+  box.style.fontSize = defaultSize + "px";
+  if (box.scrollWidth > box.clientWidth) {
+    while (size > minSize && box.scrollWidth > box.clientWidth) {
+      size -= 1;
+      box.style.fontSize = size + "px";
+    }
+  }
+};
+
+const getEvangelistByName = (name) =>
+  (state.data.evangelists || []).find(
+    (row) => String(row["이름"] || "") === String(name || "")
+  ) || null;
+
+const buildInitialParticipantsFromAssignments = () => {
+  const names =
+    (state.data.assignments || []).map((row) => String(row["이름"] || "")) || [];
+  state.participantsToday = Array.from(new Set(names));
+};
+
+const buildCarAssignmentsFromServer = () => {
+  const rows = state.data.assignments || [];
+  const byCar = {};
+  rows.forEach((row) => {
+    const carId = String(row["차량"] || "");
+    const name = String(row["이름"] || "");
+    const role = String(row["역할"] || "");
+    if (!carId || !name) {
+      return;
+    }
+    if (!byCar[carId]) {
+      byCar[carId] = {
+        carId,
+        driver: "",
+        capacity: 0,
+        members: []
+      };
+    }
+    if (role === "운전자") {
+      byCar[carId].driver = name;
+      const ev = getEvangelistByName(name);
+      const cap = ev && ev["차량"] != null ? Number(ev["차량"]) || 0 : 0;
+      byCar[carId].capacity = cap || byCar[carId].capacity || 0;
+    }
+    if (!byCar[carId].members.includes(name)) {
+      byCar[carId].members.push(name);
+    }
+  });
+  state.carAssignments = Object.keys(byCar).map((key) => byCar[key]);
+};
+
+const ensureAssignmentState = () => {
+  if (!state.participantsToday.length && (state.data.assignments || []).length) {
+    buildInitialParticipantsFromAssignments();
+  }
+  if (!state.carAssignments.length && (state.data.assignments || []).length) {
+    buildCarAssignmentsFromServer();
+  }
+};
+
+const resetCarAssignmentsFromSaved = () => {
+  const has = (state.data.assignments || []).length > 0;
+  if (has) {
+    buildInitialParticipantsFromAssignments();
+    buildCarAssignmentsFromServer();
+  } else {
+    state.participantsToday = [];
+    state.carAssignments = [];
+  }
+};
+
+const autoAssignCars = () => {
+  const all = state.participantsToday.slice();
+  const evangelists = all
+    .map((name) => {
+      const found = getEvangelistByName(name);
+      if (found) {
+        return found;
+      }
+      return { 이름: name };
+    })
+    .filter((row) => String(row["이름"] || ""));
+  if (!evangelists.length) {
+    alert("선택된 전도인이 없습니다.");
+    return;
+  }
+  const driverEv = [];
+  const nonDriverEv = [];
+  evangelists.forEach((e) => {
+    const isDriver = isTrueValue(e["운전자"]);
+    const cap = e["차량"] != null ? Number(e["차량"]) || 0 : 0;
+    if (isDriver && cap > 0) {
+      driverEv.push(e);
+    } else {
+      nonDriverEv.push(e);
+    }
+  });
+  if (!driverEv.length) {
+    alert("운전자로 설정된 전도인이 없습니다.");
+    return;
+  }
+  const sortedDrivers = driverEv.slice().sort((a, b) => {
+    const capA = a["차량"] != null ? Number(a["차량"]) || 0 : 0;
+    const capB = b["차량"] != null ? Number(b["차량"]) || 0 : 0;
+    return capB - capA;
+  });
+  const activeDrivers = [];
+  let capacitySum = 0;
+  const totalPeople = evangelists.length;
+  sortedDrivers.forEach((e) => {
+    if (capacitySum >= totalPeople) {
+      nonDriverEv.push(e);
+      return;
+    }
+    const cap = e["차량"] != null ? Number(e["차량"]) || 0 : 0;
+    activeDrivers.push(e);
+    capacitySum += cap || 0;
+  });
+  const evByName = {};
+  evangelists.forEach((e) => {
+    const n = String(e["이름"] || "");
+    if (n) {
+      evByName[n] = e;
+    }
+  });
+  const cars = activeDrivers.map((d, idx) => {
+    const cap = d["차량"] != null ? Number(d["차량"]) || 0 : 0;
+    return {
+      carId: String(idx + 1),
+      driver: d["이름"],
+      capacity: cap || 0,
+      members: [d["이름"]],
+      hasDeaf: isTrueValue(d["농인"]),
+      maleCount: String(d["성별"] || "") === "남" ? 1 : 0,
+      femaleCount: String(d["성별"] || "") === "여" ? 1 : 0
+    };
+  });
+  const assignedNames = new Set();
+  cars.forEach((c) => {
+    (c.members || []).forEach((n) => {
+      assignedNames.add(String(n));
+    });
+  });
+  const driverSpouseNames = new Set();
+  cars.forEach((car) => {
+    const driverName = String(car.driver || "");
+    if (!driverName) {
+      return;
+    }
+    const ev = evByName[driverName];
+    if (!ev) {
+      return;
+    }
+    const spouseName = String(ev["부부"] || "");
+    if (!spouseName) {
+      return;
+    }
+    if (driverSpouseNames.has(spouseName)) {
+      return;
+    }
+    const spouseEv = evByName[spouseName];
+    if (!spouseEv) {
+      return;
+    }
+    if (!all.includes(spouseName)) {
+      return;
+    }
+    const cap = car.capacity || 0;
+    if (cap && car.members.length >= cap) {
+      return;
+    }
+    if (!car.members.includes(spouseName)) {
+      car.members.push(spouseName);
+      assignedNames.add(spouseName);
+      driverSpouseNames.add(spouseName);
+      const gender = String(spouseEv["성별"] || "");
+      if (gender === "남") {
+        car.maleCount += 1;
+      } else if (gender === "여") {
+        car.femaleCount += 1;
+      }
+      if (isTrueValue(spouseEv["농인"])) {
+        car.hasDeaf = true;
+      }
+    }
+  });
+  const makePerson = (row) => ({
+    name: row["이름"],
+    isDeaf: isTrueValue(row["농인"]),
+    gender: String(row["성별"] || ""),
+    spouse: String(row["부부"] || "")
+  });
+  const others = evangelists.filter(
+    (e) =>
+      !activeDrivers.includes(e) &&
+      !driverSpouseNames.has(String(e["이름"] || ""))
+  );
+  const nonDriverPeople = others.map(makePerson);
+  const deafPeople = nonDriverPeople.filter((p) => p.isDeaf);
+  const normalPeople = nonDriverPeople.filter((p) => !p.isDeaf);
+  const assignToCar = (person) => {
+    if (!person || !person.name) {
+      return;
+    }
+    if (assignedNames.has(String(person.name))) {
+      return;
+    }
+    const spouseName = String(person.spouse || "");
+    const spouseEv = spouseName ? evByName[spouseName] : null;
+    const spouseAvailable =
+      spouseEv &&
+      all.includes(spouseName) &&
+      !assignedNames.has(spouseName) &&
+      others.includes(spouseEv);
+    const requiredSeats = spouseAvailable ? 2 : 1;
+    const candidates = cars.filter(
+      (c) =>
+        c.capacity === 0 ||
+        (c.members.length + requiredSeats <= c.capacity)
+    );
+    if (!candidates.length) {
+      return;
+    }
+    let target = null;
+    if (person.isDeaf) {
+      const preferred = candidates.filter((c) => !c.hasDeaf);
+      const list = preferred.length ? preferred : candidates;
+      target = list.reduce((best, c) => {
+        if (!best) return c;
+        const seatsBest =
+          (best.capacity || 0) - (best.members.length || 0);
+        const seatsC = (c.capacity || 0) - (c.members.length || 0);
+        return seatsC > seatsBest ? c : best;
+      }, null);
+    } else if (person.gender === "여") {
+      const preferred = candidates.filter(
+        (c) => c.femaleCount >= 1 || c.maleCount === 0
+      );
+      const list = preferred.length ? preferred : candidates;
+      target = list.reduce((best, c) => {
+        if (!best) return c;
+        const seatsBest =
+          (best.capacity || 0) - (best.members.length || 0);
+        const seatsC = (c.capacity || 0) - (c.members.length || 0);
+        return seatsC > seatsBest ? c : best;
+      }, null);
+    } else {
+      target = candidates.reduce((best, c) => {
+        if (!best) return c;
+        const seatsBest =
+          (best.capacity || 0) - (best.members.length || 0);
+        const seatsC = (c.capacity || 0) - (c.members.length || 0);
+        return seatsC > seatsBest ? c : best;
+      }, null);
+    }
+    if (!target) {
+      return;
+    }
+    const addPersonToCar = (name, evRow, info) => {
+      if (!name) {
+        return;
+      }
+      if (assignedNames.has(String(name))) {
+        return;
+      }
+      if (!target.members.includes(name)) {
+        target.members.push(name);
+      }
+      assignedNames.add(String(name));
+      const gender = String(info.gender || "");
+      if (gender === "남") {
+        target.maleCount += 1;
+      } else if (gender === "여") {
+        target.femaleCount += 1;
+      }
+      if (info.isDeaf) {
+        target.hasDeaf = true;
+      }
+    };
+    addPersonToCar(person.name, evByName[person.name] || null, person);
+    if (spouseAvailable) {
+      const spouseInfo = makePerson(spouseEv);
+      addPersonToCar(spouseName, spouseEv, spouseInfo);
+    }
+  };
+  deafPeople.forEach(assignToCar);
+  normalPeople.forEach(assignToCar);
+  state.carAssignments = cars.map((c) => ({
+    carId: c.carId,
+    driver: c.driver,
+    capacity: c.capacity,
+    members: Array.from(new Set(c.members))
+  }));
+  renderCarAssignmentsPanel();
+};
+
+const saveCarAssignments = async () => {
+  const rows = [];
+  state.carAssignments.forEach((car) => {
+    const carId = car.carId;
+    const driver = car.driver;
+    const members = car.members || [];
+    if (driver) {
+      rows.push({ carId, name: driver, role: "운전자" });
+    }
+    members.forEach((name) => {
+      if (!name || name === driver) {
+        return;
+      }
+      rows.push({ carId, name, role: "탑승자" });
+    });
+  });
+  setLoading(true, "차량 배정 저장 중...");
+  try {
+    const res = await apiRequest("saveCarAssignments", {
+      assignments: JSON.stringify(rows)
+    });
+    if (!res.success) {
+      alert(res.message || "차량 배정 저장에 실패했습니다.");
+      return;
+    }
+    state.data.assignments = res.assignments || [];
+    buildInitialParticipantsFromAssignments();
+    buildCarAssignmentsFromServer();
+    renderAdminPanel();
+    renderMyCarInfo();
+  } finally {
+    setLoading(false);
+  }
+};
+
+const resetCarAssignmentsOnServer = async () => {
+  setLoading(true, "차량 배정 초기화 중...");
+  try {
+    const res = await apiRequest("resetCarAssignments", {});
+    if (!res.success) {
+      alert(res.message || "차량 배정 초기화에 실패했습니다.");
+      return;
+    }
+    state.data.assignments = [];
+    state.participantsToday = [];
+    state.carAssignments = [];
+    renderAdminPanel();
+    renderMyCarInfo();
+  } finally {
+    setLoading(false);
+  }
+};
+
+const renderCarAssignmentsPanel = () => {
+  const panel = elements.carAssignPanel;
+  if (!panel) {
+    return;
+  }
+  if (!state.user || state.user.role === "전도인") {
+    panel.innerHTML = "";
+    return;
+  }
+  panel.innerHTML = "";
+  const grid = document.createElement("div");
+  grid.className = "car-assign-grid";
+  const cars = state.carAssignments || [];
+  cars.forEach((car) => {
+    const driverName = car.driver ? String(car.driver) : "";
+    const col = document.createElement("div");
+    col.className = "car-column";
+    col.dataset.carId = car.carId;
+    const header = document.createElement("div");
+    header.className = "car-column-header";
+    header.innerHTML = driverName
+      ? `차량 ${car.carId}<br />(${driverName})`
+      : `차량 ${car.carId}`;
+    const membersBox = document.createElement("div");
+    membersBox.className = "car-members";
+    membersBox.dataset.carId = car.carId;
+    (car.members || []).forEach((name) => {
+      const item = document.createElement("div");
+      item.className = "car-member";
+      item.draggable = true;
+      item.dataset.name = name;
+      item.dataset.carId = car.carId;
+      item.textContent = name;
+      membersBox.appendChild(item);
+    });
+    col.append(header, membersBox);
+    grid.appendChild(col);
+  });
+  panel.appendChild(grid);
+};
+
+const renderSelectedParticipants = () => {
+  const box = elements.carAssignSelected;
+  if (!box) {
+    return;
+  }
+  const names = state.participantsToday.slice();
+  box.innerHTML = "";
+  if (!names.length) {
+    return;
+  }
+  const frag = document.createDocumentFragment();
+  names.forEach((name) => {
+    const item = document.createElement("div");
+    item.className = "selected-person";
+    item.textContent = name;
+    frag.appendChild(item);
+  });
+  box.appendChild(frag);
+};
+
+const formatAssignmentDate = (value) => {
+  if (!value) {
+    return "";
+  }
+  if (typeof value === "string") {
+    if (/^\d{2}\/\d{2}\/\d{2}$/.test(value)) {
+      return value;
+    }
+    const isoMatch = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (isoMatch) {
+      const yy = isoMatch[1].slice(-2);
+      const mm = isoMatch[2];
+      const dd = isoMatch[3];
+      return yy + "/" + mm + "/" + dd;
+    }
+  }
+  try {
+    const d = new Date(value);
+    if (!isNaN(d.getTime())) {
+      const yy = String(d.getFullYear()).slice(-2);
+      const mm = String(d.getMonth() + 1).padStart(2, "0");
+      const dd = String(d.getDate()).padStart(2, "0");
+      return yy + "/" + mm + "/" + dd;
+    }
+  } catch (e) {
+  }
+  return String(value);
+};
+
+const renderCarAssignPopup = () => {
+  if (!elements.carAssignOverlay || !state.user) {
+    return;
+  }
+  const isLeader =
+    state.user.role === "관리자" || state.user.role === "인도자";
+  if (!isLeader) {
+    elements.carAssignOverlay.classList.add("hidden");
+    return;
+  }
+  const listEl = elements.carAssignEvangelistList;
+  if (listEl) {
+    const list = (state.data.evangelists || [])
+      .slice()
+      .sort((a, b) =>
+        String(a["이름"] || "").localeCompare(
+          String(b["이름"] || ""),
+          "ko-KR"
+        )
+      );
+    const itemsHtml = list
+      .map((row) => {
+        const name = row["이름"] || "";
+        const isParticipant = state.participantsToday.includes(name);
+        return `<div class="ev-item${
+          isParticipant ? " selected" : ""
+        }" data-name="${name}">${name}</div>`;
+      })
+      .join("");
+    const tempHtml =
+      '<div class="ev-item ev-temp-add" data-role="temp-add">+ 추가</div>';
+    listEl.innerHTML = itemsHtml + tempHtml;
+  }
+  const meta = elements.carAssignMeta;
+  if (meta) {
+    const rows = state.data.assignments || [];
+    if (rows.length) {
+      const date =
+        rows[0]["날짜"] ||
+        rows[0]["date"] ||
+        rows[0]["Date"] ||
+        "";
+      const dateText = formatAssignmentDate(date);
+      meta.textContent = dateText
+        ? `배정된 날짜: ${dateText}`
+        : "오늘 차량 배정이 저장되어 있습니다.";
+    } else {
+      meta.textContent = "저장된 차량 배정이 없습니다.";
+    }
+  }
+  renderSelectedParticipants();
+  renderCarAssignmentsPanel();
 };
 
 const loadApiUrl = () => {
@@ -782,7 +1340,12 @@ const startServiceForArea = async (areaId) => {
 };
 
 const renderAdminPanel = () => {
-  if (!state.user || state.user.role !== "관리자") {
+  if (!state.user || (state.user.role === "전도인" && state.currentMenu !== "visits")) {
+    elements.adminPanel.classList.add("hidden");
+    return;
+  }
+  const showAdmin = state.user && (state.user.role === "관리자" || state.user.role === "인도자");
+  if (!showAdmin || state.currentMenu !== "admin") {
     elements.adminPanel.classList.add("hidden");
     return;
   }
@@ -806,9 +1369,7 @@ const renderAdminPanel = () => {
         )} | ${row["전도인"] || row["방문자"] || ""}</div>`
     )
     .join("");
-  elements.evangelistList.innerHTML = state.data.evangelists
-    .map((row) => `<div class="list-item">${row["이름"]} | ${row["역할"]}</div>`)
-    .join("");
+  elements.evangelistList.innerHTML = "";
   const bannedCards = state.data.cards.filter(
     (card) => isTrueValue(card["방문금지"]) || isTrueValue(card["6개월"])
   );
@@ -827,31 +1388,7 @@ const renderAdminPanel = () => {
       tags.push("6개월");
     }
     sub.textContent = tags.join(", ");
-    const button = document.createElement("button");
-    button.type = "button";
-    button.textContent = "해제";
-    button.addEventListener("click", async () => {
-      try {
-        setLoading(true, "카드 상태 변경 중...");
-        const res = await apiRequest("updateCardFlags", {
-          areaId: card["구역번호"],
-          cardNumber: card["카드번호"],
-          sixMonths: "false",
-          banned: "false"
-        });
-        if (!res.success) {
-          alert(res.message || "카드 상태 변경에 실패했습니다.");
-          return;
-        }
-        card["6개월"] = false;
-        card["방문금지"] = false;
-        renderAdminPanel();
-        renderCards();
-      } finally {
-        setLoading(false);
-      }
-    });
-    item.append(title, sub, button);
+    item.append(title, sub);
     elements.bannedCardList.appendChild(item);
   });
 };
@@ -860,7 +1397,6 @@ const selectArea = (areaId) => {
   state.selectedArea = areaId;
   state.selectedCard = null;
   elements.areaTitle.textContent = `구역 ${areaId}`;
-  elements.leaderActions.classList.add("hidden");
   renderAreas();
   renderCards();
   setStatus("");
@@ -902,6 +1438,7 @@ const loadData = async () => {
     state.data.completions = data.completions || [];
     state.data.visits = data.visits || [];
     state.data.evangelists = data.evangelists || [];
+    state.data.assignments = data.assignments || [];
   } finally {
     setLoading(false);
   }
@@ -934,15 +1471,9 @@ const login = async () => {
   }
   renderAreas();
   renderCards();
+  ensureAssignmentState();
   renderAdminPanel();
-};
-
-const startService = async () => {
-  if (!state.selectedArea) {
-    alert("구역을 선택해 주세요.");
-    return;
-  }
-  await startServiceForArea(state.selectedArea);
+  renderMyCarInfo();
 };
 
 const resetRecentVisits = async () => {
@@ -1051,7 +1582,6 @@ const saveVisit = async (event) => {
 
 elements.saveApiUrl.addEventListener("click", saveApiUrl);
 elements.loginButton.addEventListener("click", login);
-elements.startService.addEventListener("click", startService);
 elements.closeAreas.addEventListener("click", () => {
   elements.areaOverlay.classList.add("hidden");
 });
@@ -1087,5 +1617,253 @@ elements.filterVisit.addEventListener("change", () => {
   renderCards();
 });
 elements.visitForm.addEventListener("submit", saveVisit);
+
+elements.carAssignEvangelistList.addEventListener("click", (event) => {
+  const item = event.target.closest(".ev-item");
+  if (!item) {
+    return;
+  }
+  const role = item.dataset.role || "";
+  if (role === "temp-add") {
+    const input = window.prompt("임시로 추가할 이름을 입력해 주세요.");
+    if (!input) {
+      return;
+    }
+    const name = input.trim();
+    if (!name) {
+      return;
+    }
+    if (!state.participantsToday.includes(name)) {
+      state.participantsToday.push(name);
+    }
+    renderSelectedParticipants();
+    renderCarAssignmentsPanel();
+    const listEl = elements.carAssignEvangelistList;
+    if (listEl) {
+      const existing = listEl.querySelector(
+        '.ev-item[data-name="' + name + '"]'
+      );
+      if (!existing) {
+        const tempItem = document.createElement("div");
+        tempItem.className = "ev-item selected";
+        tempItem.dataset.name = name;
+        tempItem.textContent = name;
+        const addBtn = listEl.querySelector(".ev-temp-add");
+        if (addBtn && addBtn.parentElement === listEl) {
+          listEl.insertBefore(tempItem, addBtn);
+        } else {
+          listEl.appendChild(tempItem);
+        }
+      }
+    }
+    return;
+  }
+  const name = item.dataset.name || "";
+  if (!name) {
+    return;
+  }
+  const exists = state.participantsToday.includes(name);
+  if (exists) {
+    state.participantsToday = state.participantsToday.filter((n) => n !== name);
+    item.classList.remove("selected");
+    const cars = state.carAssignments || [];
+    cars.forEach((car) => {
+      car.members = (car.members || []).filter((n) => n !== name);
+    });
+    state.carAssignments = cars;
+  } else {
+    state.participantsToday.push(name);
+    item.classList.add("selected");
+  }
+  renderSelectedParticipants();
+  renderCarAssignmentsPanel();
+});
+
+elements.carAssignPanel.addEventListener("dragstart", (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) {
+    return;
+  }
+  if (!target.classList.contains("car-member")) {
+    return;
+  }
+  target.classList.add("dragging");
+  const name = target.dataset.name || "";
+  const carId = target.dataset.carId || "";
+  event.dataTransfer.setData(
+    "text/plain",
+    JSON.stringify({ name, carId })
+  );
+});
+
+elements.carAssignPanel.addEventListener("dragend", (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) {
+    return;
+  }
+  if (target.classList.contains("car-member")) {
+    target.classList.remove("dragging");
+  }
+});
+
+elements.carAssignPanel.addEventListener("dragover", (event) => {
+  const zone = event.target.closest(".car-members");
+  if (!zone) {
+    return;
+  }
+  event.preventDefault();
+});
+
+elements.carAssignPanel.addEventListener("drop", (event) => {
+  const zone = event.target.closest(".car-members");
+  if (!zone) {
+    return;
+  }
+  event.preventDefault();
+  const data = event.dataTransfer.getData("text/plain");
+  if (!data) {
+    return;
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(data);
+  } catch (e) {
+    return;
+  }
+  const name = parsed.name;
+  const fromCarId = parsed.carId;
+  const toCarId = zone.dataset.carId || "";
+  if (!name || !fromCarId || !toCarId) {
+    return;
+  }
+  const cars = state.carAssignments || [];
+  const fromCar = cars.find((c) => String(c.carId) === String(fromCarId));
+  const toCar = cars.find((c) => String(c.carId) === String(toCarId));
+  if (!fromCar || !toCar) {
+    return;
+  }
+  if (fromCarId === toCarId) {
+    const rest = (fromCar.members || []).filter((n) => n !== name);
+    fromCar.members = [name].concat(rest);
+  } else {
+    fromCar.members = (fromCar.members || []).filter((n) => n !== name);
+    if (!toCar.members) {
+      toCar.members = [];
+    }
+    if (!toCar.members.includes(name)) {
+      toCar.members.push(name);
+    }
+  }
+  cars.forEach((car) => {
+    const first = (car.members || [])[0];
+    if (first) {
+      car.driver = first;
+    }
+  });
+  renderCarAssignPopup();
+});
+
+elements.menuToggle.addEventListener("click", () => {
+  elements.sideMenu.classList.remove("hidden");
+});
+
+elements.menuClose.addEventListener("click", () => {
+  elements.sideMenu.classList.add("hidden");
+});
+
+elements.sideMenu.addEventListener("click", (event) => {
+  if (event.target === elements.sideMenu) {
+    elements.sideMenu.classList.add("hidden");
+  }
+});
+
+elements.sideMenu.addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-menu]");
+  if (!button) {
+    return;
+  }
+  const key = button.dataset.menu;
+  if (!key) {
+    return;
+  }
+  state.currentMenu = key;
+  elements.sideMenu.classList.add("hidden");
+  if (key === "cards") {
+    renderAreas();
+    renderCards();
+    renderAdminPanel();
+  } else if (key === "visits") {
+    renderVisitsView();
+    renderAdminPanel();
+  } else if (key === "admin") {
+    renderAdminPanel();
+  } else if (key === "car-assign") {
+    resetCarAssignmentsFromSaved();
+    elements.carAssignOverlay.classList.remove("hidden");
+    document.body.style.overflow = "hidden";
+    renderCarAssignPopup();
+  }
+});
+
+elements.closeCarAssign.addEventListener("click", () => {
+  elements.carAssignOverlay.classList.add("hidden");
+  document.body.style.overflow = "";
+});
+
+elements.carAssignOverlay.addEventListener("click", (event) => {
+  if (event.target === elements.carAssignOverlay) {
+    elements.carAssignOverlay.classList.add("hidden");
+    document.body.style.overflow = "";
+  }
+});
+
+elements.carAssignAuto.addEventListener("click", () => {
+  autoAssignCars();
+  renderCarAssignPopup();
+});
+
+elements.carAssignSave.addEventListener("click", () => {
+  saveCarAssignments();
+});
+
+elements.carAssignAdd.addEventListener("click", () => {
+  const cars = state.carAssignments || [];
+  const nextId =
+    cars.reduce((max, c) => {
+      const v = Number(c.carId) || 0;
+      return v > max ? v : max;
+    }, 0) + 1;
+  cars.push({
+    carId: String(nextId),
+    driver: "",
+    capacity: 0,
+    members: []
+  });
+  state.carAssignments = cars;
+  renderCarAssignPopup();
+});
+
+elements.carAssignReset.addEventListener("click", async () => {
+  await resetCarAssignmentsOnServer();
+  renderCarAssignPopup();
+});
+
+if (elements.carAssignTempAdd) {
+  elements.carAssignTempAdd.addEventListener("click", () => {
+    const input = window.prompt("임시로 추가할 이름을 입력해 주세요.");
+    if (!input) {
+      return;
+    }
+    const name = input.trim();
+    if (!name) {
+      return;
+    }
+    if (!state.participantsToday.includes(name)) {
+      state.participantsToday.push(name);
+    }
+    renderSelectedParticipants();
+    renderCarAssignmentsPanel();
+  });
+}
 
 loadApiUrl();
