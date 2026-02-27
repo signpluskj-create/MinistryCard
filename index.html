@@ -4,6 +4,9 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>봉사 카드 정보</title>
+    <meta name="theme-color" content="#1f6feb" />
+    <link rel="manifest" href="manifest.json" />
+    <link rel="apple-touch-icon" href="icons/visit-house-192.svg" />
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
@@ -23,8 +26,8 @@
           </div>
           <ul class="side-menu-list">
             <li><button type="button" data-menu="cards">구역 카드</button></li>
-            <li><button type="button" data-menu="visits">방문 내역</button></li>
-            <li class="admin-only"><button type="button" data-menu="admin">관리자 보기</button></li>
+            <li><button type="button" data-menu="visits">완료 내역</button></li>
+            <li class="admin-only"><button type="button" data-menu="admin">관리자 화면</button></li>
             <li class="admin-only"><button type="button" data-menu="car-assign">차량 배정</button></li>
           </ul>
         </div>
@@ -37,6 +40,15 @@
               <button id="close-areas" class="icon-button" type="button">✕</button>
             </div>
             <div id="area-list-overlay" class="list"></div>
+          </div>
+        </div>
+        <div id="completion-overlay" class="area-overlay hidden">
+          <div class="area-overlay-content">
+            <div class="area-overlay-header">
+              <span>완료 내역</span>
+              <button id="close-completion" class="icon-button" type="button">✕</button>
+            </div>
+            <div id="completion-area-list" class="list"></div>
           </div>
         </div>
         <div id="car-assign-overlay" class="area-overlay hidden">
@@ -60,6 +72,42 @@
                 <div id="car-assign-selected" class="car-assign-selected"></div>
                 <div id="car-assign-panel" class="car-assign-panel"></div>
               </div>
+            </div>
+          </div>
+        </div>
+        <div id="admin-overlay" class="area-overlay hidden">
+          <div class="area-overlay-content">
+            <div class="area-overlay-header">
+              <span>관리자 화면</span>
+              <button id="close-admin" class="icon-button" type="button">✕</button>
+            </div>
+            <div class="admin-overlay-body">
+              <section id="admin-panel" class="panel admin-panel">
+                <div class="panel-body">
+                  <div class="admin-grid">
+                    <div>
+                      <h3>구역카드 관리</h3>
+                      <div class="admin-actions">
+                        <button id="admin-card-add" type="button">카드 추가/수정</button>
+                        <button id="admin-card-delete" type="button">카드 삭제</button>
+                      </div>
+                      <div id="completion-list" class="list"></div>
+                    </div>
+                    <div>
+                      <h3>전도인 명단 관리</h3>
+                      <div class="admin-actions">
+                        <button id="admin-ev-add" type="button">전도인 추가/수정</button>
+                        <button id="admin-ev-delete" type="button">전도인 삭제</button>
+                      </div>
+                      <div id="evangelist-list" class="list"></div>
+                    </div>
+                    <div>
+                      <h3>방문금지/6개월 카드</h3>
+                      <div id="banned-card-list" class="list"></div>
+                    </div>
+                  </div>
+                </div>
+              </section>
             </div>
           </div>
         </div>
@@ -157,31 +205,6 @@
                 </label>
                 <button id="save-visit" type="submit">저장</button>
               </form>
-            </div>
-          </section>
-          <section id="admin-panel" class="panel admin-panel hidden">
-            <div class="panel-header">
-              <h2>관리자 보기</h2>
-            </div>
-            <div class="panel-body">
-              <div class="admin-grid">
-                <div>
-                  <h3>완료내역</h3>
-                  <div id="completion-list" class="list"></div>
-                </div>
-                <div>
-                  <h3>방문내역</h3>
-                  <div id="visit-list" class="list"></div>
-                </div>
-                <div>
-                  <h3>전도인 명단</h3>
-                  <div id="evangelist-list" class="list"></div>
-                </div>
-                <div>
-                  <h3>방문금지/6개월 카드</h3>
-                  <div id="banned-card-list" class="list"></div>
-                </div>
-              </div>
             </div>
           </section>
         </section>

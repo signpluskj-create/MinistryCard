@@ -23,6 +23,11 @@ const state = {
   filterArea: "all",
   filterStatus: "all",
   filterVisit: "all",
+  adminCardsAreaId: null,
+  adminCardsSelectedKey: null,
+  adminBannedAreaId: null,
+  adminBannedSelectedKey: null,
+  completionExpandedAreaId: null,
   editingVisit: null,
   statusTimer: null,
   scrollToSelectedCard: false,
@@ -59,8 +64,13 @@ const elements = {
   areaOverlay: document.getElementById("area-overlay"),
   closeAreas: document.getElementById("close-areas"),
   areaListOverlay: document.getElementById("area-list-overlay"),
+  completionOverlay: document.getElementById("completion-overlay"),
+  closeCompletion: document.getElementById("close-completion"),
+  completionAreaList: document.getElementById("completion-area-list"),
   carAssignOverlay: document.getElementById("car-assign-overlay"),
   closeCarAssign: document.getElementById("close-car-assign"),
+  adminOverlay: document.getElementById("admin-overlay"),
+  closeAdmin: document.getElementById("close-admin"),
   carAssignEvangelistList: document.getElementById("car-assign-evangelist-list"),
   carAssignSelected: document.getElementById("car-assign-selected"),
   carAssignMeta: document.getElementById("car-assign-meta"),
@@ -80,7 +90,12 @@ const elements = {
   filterVisit: document.getElementById("filter-visit"),
   areaListInline: document.getElementById("area-list-inline"),
   loadingIndicator: document.getElementById("loading-indicator"),
-  loadingText: document.getElementById("loading-text")
+  loadingText: document.getElementById("loading-text"),
+  adminCardAdd: document.getElementById("admin-card-add"),
+  adminCardDelete: document.getElementById("admin-card-delete"),
+  adminCarEdit: document.getElementById("admin-car-edit"),
+  adminEvAdd: document.getElementById("admin-ev-add"),
+  adminEvDelete: document.getElementById("admin-ev-delete")
 };
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
@@ -520,11 +535,39 @@ const autoAssignCars = () => {
   };
   deafPeople.forEach(assignToCar);
   normalPeople.forEach(assignToCar);
+  const seenNames = new Set();
+  cars.forEach((car) => {
+    const driverName = String(car.driver || "");
+    const uniqueMembers = [];
+    const localSeen = new Set();
+    if (driverName) {
+      if (!seenNames.has(driverName)) {
+        uniqueMembers.push(driverName);
+        seenNames.add(driverName);
+        localSeen.add(driverName);
+      } else {
+        car.driver = "";
+      }
+    }
+    (car.members || []).forEach((name) => {
+      const key = String(name || "");
+      if (!key || key === driverName) {
+        return;
+      }
+      if (localSeen.has(key) || seenNames.has(key)) {
+        return;
+      }
+      localSeen.add(key);
+      seenNames.add(key);
+      uniqueMembers.push(key);
+    });
+    car.members = uniqueMembers;
+  });
   state.carAssignments = cars.map((c) => ({
     carId: c.carId,
     driver: c.driver,
     capacity: c.capacity,
-    members: Array.from(new Set(c.members))
+    members: c.members || []
   }));
   renderCarAssignmentsPanel();
 };
@@ -1239,79 +1282,64 @@ const renderCards = () => {
 const renderVisitsView = () => {
   elements.cardList.innerHTML = "";
   elements.visitForm.classList.add("hidden");
-  const query = state.searchQuery.trim();
-  const filterResult = state.visitFilter;
-  const getCardKey = (row) =>
-    `${row["구역번호"] || ""}__${getVisitCardNumber(row)}`;
-  const cardMap = {};
-  state.data.cards.forEach((card) => {
-    const key = `${card["구역번호"] || ""}__${card["카드번호"] || ""}`;
-    cardMap[key] = card;
-  });
-  let rows = (state.data.visits || []).slice();
-  if (filterResult === "meet") {
-    rows = rows.filter((r) => String(r["결과"] || r["방문결과"] || "") === "만남");
-  } else if (filterResult === "absent") {
-    rows = rows.filter((r) => String(r["결과"] || r["방문결과"] || "") === "부재");
-  } else if (filterResult === "invite") {
-    rows = rows.filter((r) => String(r["결과"] || r["방문결과"] || "") === "초대장");
-  } else if (filterResult === "six") {
-    rows = rows.filter((r) => String(r["결과"] || r["방문결과"] || "") === "6개월");
-  } else if (filterResult === "banned") {
-    rows = rows.filter((r) => String(r["결과"] || r["방문결과"] || "") === "방문금지");
+  elements.cardList.classList.remove("card-grid");
+  elements.areaListInline.innerHTML = "";
+  elements.statusMessage.textContent = "";
+  const areaId = state.completionExpandedAreaId;
+  if (!areaId) {
+    elements.statusMessage.textContent = "구역을 선택해 주세요.";
+    return;
   }
-  if (query) {
-    rows = rows.filter((row) => {
-      const card = cardMap[getCardKey(row)] || {};
-      const addr = `${card["주소"] || ""} ${card["상세주소"] || ""}`;
-      return addr.includes(query);
-    });
-  }
-  rows.sort((a, b) => {
-    if (state.sortOrder === "visitDate") {
-      const da = parseVisitDate(getVisitDateValue(a));
-      const db = parseVisitDate(getVisitDateValue(b));
-      const va = da ? da.getTime() : 0;
-      const vb = db ? db.getTime() : 0;
-      if (va !== vb) {
-        return vb - va;
-      }
-    } else if (state.sortOrder === "worker") {
-      const wa = String(a["전도인"] || "");
-      const wb = String(b["전도인"] || "");
-      if (wa !== wb) {
-        return wa.localeCompare(wb);
-      }
-    } else if (state.sortOrder === "address") {
-      const cardA = cardMap[getCardKey(a)] || {};
-      const cardB = cardMap[getCardKey(b)] || {};
-      const aa = `${cardA["주소"] || ""} ${cardA["상세주소"] || ""}`;
-      const ab = `${cardB["주소"] || ""} ${cardB["상세주소"] || ""}`;
-      if (aa !== ab) {
-        return aa.localeCompare(ab);
-      }
-    }
-    const da = parseVisitDate(getVisitDateValue(a));
-    const db = parseVisitDate(getVisitDateValue(b));
+  elements.areaTitle.textContent = `완료 내역 · 구역 ${areaId}`;
+  const completions = (state.data.completions || []).filter(
+    (row) => String(row["구역번호"] || row["areaId"] || "") === String(areaId)
+  );
+  completions.sort((a, b) => {
+    const da = parseVisitDate(a["완료날짜"] || a["completeDate"]);
+    const db = parseVisitDate(b["완료날짜"] || b["completeDate"]);
     const va = da ? da.getTime() : 0;
     const vb = db ? db.getTime() : 0;
     return vb - va;
   });
-  elements.cardList.classList.remove("card-grid");
-  rows.slice(0, 200).forEach((row) => {
-    const item = document.createElement("div");
-    item.className = "list-item";
-    const title = document.createElement("div");
-    title.textContent = `${row["구역번호"] || ""} - ${getVisitCardNumber(row)} (${formatDate(
-      getVisitDateValue(row)
-    )})`;
-    const sub = document.createElement("div");
-    sub.textContent = `${row["전도인"] || row["방문자"] || ""} · ${
-      row["결과"] || row["방문결과"] || ""
-    }${row["메모"] || row["비고"] ? " · " + (row["메모"] || row["비고"]) : ""}`;
-    item.append(title, sub);
-    elements.cardList.appendChild(item);
-  });
+  const list = document.createElement("div");
+  list.className = "list";
+  if (!completions.length) {
+    const empty = document.createElement("div");
+    empty.className = "list-item";
+    empty.textContent = "완료 내역이 없습니다.";
+    list.appendChild(empty);
+  } else {
+    completions.forEach((row) => {
+      const item = document.createElement("div");
+      item.className = "list-item";
+      const title = document.createElement("div");
+      const startText = row["시작날짜"]
+        ? formatDate(row["시작날짜"])
+        : "";
+      const doneText = row["완료날짜"]
+        ? formatDate(row["완료날짜"])
+        : "";
+      title.textContent =
+        startText && doneText
+          ? `${startText} → ${doneText}`
+          : doneText || startText || "";
+      const leader = document.createElement("div");
+      leader.textContent = row["인도자"]
+        ? `인도자: ${row["인도자"]}`
+        : "";
+      const memo = document.createElement("div");
+      memo.textContent = row["비고"] || "";
+      item.appendChild(title);
+      if (leader.textContent) {
+        item.appendChild(leader);
+      }
+      if (memo.textContent) {
+        item.appendChild(memo);
+      }
+      list.appendChild(item);
+    });
+  }
+  elements.cardListHome.appendChild(list);
 };
 
 const startServiceForArea = async (areaId) => {
@@ -1350,45 +1378,492 @@ const renderAdminPanel = () => {
     return;
   }
   elements.adminPanel.classList.remove("hidden");
-  elements.completionList.innerHTML = state.data.completions
-    .map(
-      (row) =>
-        `<div class="list-item">${row["구역번호"]} | ${formatDate(
-          row["시작날짜"]
-        )} → ${formatDate(row["완료날짜"])}</div>`
-    )
-    .join("");
-  elements.visitList.innerHTML = state.data.visits
-    .slice(-20)
-    .map(
-      (row) =>
-        `<div class="list-item">${row["구역번호"]} ${getVisitCardNumber(
-          row
-        )} | ${formatDate(
-          getVisitDateValue(row)
-        )} | ${row["전도인"] || row["방문자"] || ""}</div>`
-    )
-    .join("");
+  const byAreaCards = groupCardsByArea();
+  const areaIds = Object.keys(byAreaCards).sort((a, b) => {
+    const na = Number(a);
+    const nb = Number(b);
+    if (!Number.isNaN(na) && !Number.isNaN(nb)) {
+      return na - nb;
+    }
+    return String(a).localeCompare(String(b), "ko-KR");
+  });
+  elements.completionList.innerHTML = "";
+  const selectedAreaId = state.adminCardsAreaId;
+  const selectedCardKey = state.adminCardsSelectedKey;
+  areaIds.forEach((areaId) => {
+    const cards = byAreaCards[areaId] || [];
+    const item = document.createElement("div");
+    item.className = "list-item";
+    item.dataset.areaId = areaId;
+    const header = document.createElement("div");
+    header.textContent = `구역 ${areaId} · 카드 ${cards.length}장`;
+    item.appendChild(header);
+    const cardsBox = document.createElement("div");
+    const expanded = selectedAreaId === areaId;
+    if (!expanded) {
+      cardsBox.style.display = "none";
+    }
+    if (expanded) {
+      const cardTable = document.createElement("table");
+      cardTable.className = "admin-table";
+      const cardThead = document.createElement("thead");
+      const cardHeadRow = document.createElement("tr");
+      ["카드번호", "주소", "상세주소", "비고", "선택"].forEach((text) => {
+        const th = document.createElement("th");
+        th.textContent = text;
+        cardHeadRow.appendChild(th);
+      });
+      cardThead.appendChild(cardHeadRow);
+      const cardTbody = document.createElement("tbody");
+      cards.forEach((card) => {
+        const tr = document.createElement("tr");
+        const cardNo = String(card["카드번호"] || "");
+        const key = `${areaId}__${cardNo}`;
+        const noTd = document.createElement("td");
+        noTd.textContent = cardNo;
+        const addrTd = document.createElement("td");
+        addrTd.textContent = String(card["주소"] || "");
+        const detailTd = document.createElement("td");
+        detailTd.textContent = String(card["상세주소"] || "");
+        const memoTd = document.createElement("td");
+        memoTd.textContent = String(card["비고"] || "");
+        const actionTd = document.createElement("td");
+        const selectBtn = document.createElement("button");
+        selectBtn.type = "button";
+        selectBtn.textContent = "선택";
+        selectBtn.addEventListener("click", () => {
+          state.adminCardsAreaId = areaId;
+          state.adminCardsSelectedKey = key;
+          renderAdminPanel();
+        });
+        actionTd.appendChild(selectBtn);
+        tr.append(noTd, addrTd, detailTd, memoTd, actionTd);
+        cardTbody.appendChild(tr);
+      });
+      cardTable.append(cardThead, cardTbody);
+      cardsBox.appendChild(cardTable);
+      const editorKey = selectedCardKey && selectedCardKey.startsWith(`${areaId}__`) ? selectedCardKey : null;
+      if (editorKey) {
+        const editor = document.createElement("div");
+        const target = cards.find((card) => `${areaId}__${String(card["카드번호"] || "")}` === editorKey);
+        if (target) {
+          const areaText = document.createElement("div");
+          areaText.textContent = `구역 ${areaId}, 카드 ${String(target["카드번호"] || "")}`;
+          const addrInput = document.createElement("input");
+          addrInput.type = "text";
+          addrInput.value = String(target["주소"] || "");
+          const detailInput = document.createElement("input");
+          detailInput.type = "text";
+          detailInput.value = String(target["상세주소"] || "");
+          const memoInput = document.createElement("input");
+          memoInput.type = "text";
+          memoInput.value = String(target["비고"] || "");
+          const saveBtn = document.createElement("button");
+          saveBtn.type = "button";
+          saveBtn.textContent = "저장";
+          saveBtn.addEventListener("click", async () => {
+            try {
+              const res = await apiRequest("upsertCard", {
+                areaId,
+                cardNumber: String(target["카드번호"] || ""),
+                address: addrInput.value || "",
+                detailAddress: detailInput.value || "",
+                memo: memoInput.value || ""
+              });
+              if (!res.success) {
+                alert(res.message || "구역카드 저장에 실패했습니다.");
+                return;
+              }
+              state.data.cards = res.cards || [];
+              renderAreas();
+              renderCards();
+              renderAdminPanel();
+              setStatus("구역카드가 저장되었습니다.");
+            } catch (e) {
+              alert("구역카드 저장 중 오류가 발생했습니다.");
+            }
+          });
+          const deleteBtn = document.createElement("button");
+          deleteBtn.type = "button";
+          deleteBtn.textContent = "삭제";
+          deleteBtn.addEventListener("click", async () => {
+            if (
+              !window.confirm(
+                `구역 ${areaId}, 카드 ${String(
+                  target["카드번호"] || ""
+                )}를 삭제하시겠습니까?`
+              )
+            ) {
+              return;
+            }
+            try {
+              const res = await apiRequest("deleteCard", {
+                areaId,
+                cardNumber: String(target["카드번호"] || "")
+              });
+              if (!res.success) {
+                alert(res.message || "구역카드 삭제에 실패했습니다.");
+                return;
+              }
+              state.data.cards = res.cards || [];
+              renderAreas();
+              renderCards();
+              state.adminCardsSelectedKey = null;
+              renderAdminPanel();
+              setStatus("구역카드가 삭제되었습니다.");
+            } catch (e) {
+              alert("구역카드 삭제 중 오류가 발생했습니다.");
+            }
+          });
+          const addrRow = document.createElement("div");
+          addrRow.textContent = "주소";
+          addrRow.appendChild(addrInput);
+          const detailRow = document.createElement("div");
+          detailRow.textContent = "상세주소";
+          detailRow.appendChild(detailInput);
+          const memoRow = document.createElement("div");
+          memoRow.textContent = "비고";
+          memoRow.appendChild(memoInput);
+          const btnRow = document.createElement("div");
+          btnRow.appendChild(saveBtn);
+          btnRow.appendChild(deleteBtn);
+          editor.appendChild(areaText);
+          editor.appendChild(addrRow);
+          editor.appendChild(detailRow);
+          editor.appendChild(memoRow);
+          editor.appendChild(btnRow);
+          cardsBox.appendChild(editor);
+        }
+      }
+    }
+    item.appendChild(cardsBox);
+    header.addEventListener("click", () => {
+      if (state.adminCardsAreaId === areaId) {
+        state.adminCardsAreaId = null;
+        state.adminCardsSelectedKey = null;
+      } else {
+        state.adminCardsAreaId = areaId;
+        state.adminCardsSelectedKey = null;
+      }
+      renderAdminPanel();
+    });
+    elements.completionList.appendChild(item);
+  });
+
+  // 전도인 명단 관리: 표 형식 편집 (차량 정보 포함)
+  const evangelists = state.data.evangelists || [];
   elements.evangelistList.innerHTML = "";
+  const table = document.createElement("table");
+  table.className = "admin-table admin-table-wide";
+  const thead = document.createElement("thead");
+  const headRow = document.createElement("tr");
+  [
+    "이름",
+    "성별",
+    "역할",
+    "운전자",
+    "정원",
+    "부부",
+    "비밀번호",
+    "작업"
+  ].forEach((text) => {
+    const th = document.createElement("th");
+    th.textContent = text;
+    headRow.appendChild(th);
+  });
+  thead.appendChild(headRow);
+  const tbody = document.createElement("tbody");
+  evangelists.forEach((row) => {
+    const name = row["이름"] || "";
+    const role = row["역할"] || row["권한"] || "";
+    const gender = row["성별"] || "";
+    const isDriver = isTrueValue(row["운전자"]);
+    const cap = row["차량"] != null ? Number(row["차량"]) || 0 : 0;
+    const spouse = row["부부"] || "";
+    const tr = document.createElement("tr");
+    tr.dataset.name = name;
+    const nameTd = document.createElement("td");
+    const nameInput = document.createElement("input");
+    nameInput.type = "text";
+    nameInput.value = name;
+    nameInput.readOnly = true;
+    nameTd.appendChild(nameInput);
+    const genderTd = document.createElement("td");
+    const genderInput = document.createElement("input");
+    genderInput.type = "text";
+    genderInput.value = gender;
+    genderInput.dataset.field = "gender";
+    genderTd.appendChild(genderInput);
+    const roleTd = document.createElement("td");
+    const roleInput = document.createElement("input");
+    roleInput.type = "text";
+    roleInput.value = role;
+    roleInput.dataset.field = "role";
+    roleTd.appendChild(roleInput);
+    const driverTd = document.createElement("td");
+    const driverInput = document.createElement("input");
+    driverInput.type = "checkbox";
+    driverInput.checked = isDriver;
+    driverInput.dataset.field = "driver";
+    driverTd.appendChild(driverInput);
+    const capTd = document.createElement("td");
+    const capInput = document.createElement("input");
+    capInput.type = "number";
+    capInput.min = "0";
+    capInput.value = cap > 0 ? String(cap) : "";
+    capInput.dataset.field = "capacity";
+    capTd.appendChild(capInput);
+    const spouseTd = document.createElement("td");
+    const spouseInput = document.createElement("input");
+    spouseInput.type = "text";
+    spouseInput.value = spouse;
+    spouseInput.dataset.field = "spouse";
+    spouseTd.appendChild(spouseInput);
+    const pwTd = document.createElement("td");
+    const pwInput = document.createElement("input");
+    pwInput.type = "text";
+    pwInput.value = row["비밀번호"] != null ? String(row["비밀번호"]) : "";
+    pwInput.dataset.field = "password";
+    pwTd.appendChild(pwInput);
+    const actionTd = document.createElement("td");
+    actionTd.className = "admin-actions-cell";
+    const saveBtn = document.createElement("button");
+    saveBtn.type = "button";
+    saveBtn.textContent = "저장";
+    saveBtn.dataset.action = "save-ev";
+    saveBtn.dataset.name = name;
+    const deleteBtn = document.createElement("button");
+    deleteBtn.type = "button";
+    deleteBtn.textContent = "삭제";
+    deleteBtn.dataset.action = "delete-ev";
+    deleteBtn.dataset.name = name;
+    actionTd.appendChild(saveBtn);
+    actionTd.appendChild(deleteBtn);
+    tr.appendChild(nameTd);
+    tr.appendChild(genderTd);
+    tr.appendChild(roleTd);
+    tr.appendChild(driverTd);
+    tr.appendChild(capTd);
+    tr.appendChild(spouseTd);
+    tr.appendChild(pwTd);
+    tr.appendChild(actionTd);
+    tbody.appendChild(tr);
+  });
+  const newTr = document.createElement("tr");
+  newTr.dataset.new = "true";
+  const newNameTd = document.createElement("td");
+  const newNameInput = document.createElement("input");
+  newNameInput.type = "text";
+  newNameInput.placeholder = "새 전도인 이름";
+  newNameInput.dataset.field = "name";
+  newNameTd.appendChild(newNameInput);
+  const newGenderTd = document.createElement("td");
+  const newGenderInput = document.createElement("input");
+  newGenderInput.type = "text";
+  newGenderInput.dataset.field = "gender";
+  newGenderTd.appendChild(newGenderInput);
+  const newRoleTd = document.createElement("td");
+  const newRoleInput = document.createElement("input");
+  newRoleInput.type = "text";
+  newRoleInput.dataset.field = "role";
+  newRoleTd.appendChild(newRoleInput);
+  const newDriverTd = document.createElement("td");
+  const newDriverInput = document.createElement("input");
+  newDriverInput.type = "checkbox";
+  newDriverInput.dataset.field = "driver";
+  newDriverTd.appendChild(newDriverInput);
+  const newCapTd = document.createElement("td");
+  const newCapInput = document.createElement("input");
+  newCapInput.type = "number";
+  newCapInput.min = "0";
+  newCapInput.dataset.field = "capacity";
+  newCapTd.appendChild(newCapInput);
+  const newSpouseTd = document.createElement("td");
+  const newSpouseInput = document.createElement("input");
+  newSpouseInput.type = "text";
+  newSpouseInput.dataset.field = "spouse";
+  newSpouseTd.appendChild(newSpouseInput);
+  const newPwTd = document.createElement("td");
+  const newPwInput = document.createElement("input");
+  newPwInput.type = "text";
+  newPwInput.dataset.field = "password";
+  newPwTd.appendChild(newPwInput);
+  const newActionTd = document.createElement("td");
+  newActionTd.className = "admin-actions-cell";
+  const newSaveBtn = document.createElement("button");
+  newSaveBtn.type = "button";
+  newSaveBtn.textContent = "추가";
+  newSaveBtn.dataset.action = "create-ev";
+  newActionTd.appendChild(newSaveBtn);
+  newTr.appendChild(newNameTd);
+  newTr.appendChild(newGenderTd);
+  newTr.appendChild(newRoleTd);
+  newTr.appendChild(newDriverTd);
+  newTr.appendChild(newCapTd);
+  newTr.appendChild(newSpouseTd);
+  newTr.appendChild(newPwTd);
+  newTr.appendChild(newActionTd);
+  tbody.appendChild(newTr);
+  table.appendChild(thead);
+  table.appendChild(tbody);
+  elements.evangelistList.appendChild(table);
   const bannedCards = state.data.cards.filter(
     (card) => isTrueValue(card["방문금지"]) || isTrueValue(card["6개월"])
   );
   elements.bannedCardList.innerHTML = "";
+  const bannedByArea = {};
   bannedCards.forEach((card) => {
+    const areaId = String(card["구역번호"] || "");
+    if (!areaId) {
+      return;
+    }
+    if (!bannedByArea[areaId]) {
+      bannedByArea[areaId] = [];
+    }
+    bannedByArea[areaId].push(card);
+  });
+  const bannedAreaIds = Object.keys(bannedByArea).sort((a, b) => {
+    const na = Number(a);
+    const nb = Number(b);
+    if (!Number.isNaN(na) && !Number.isNaN(nb)) {
+      return na - nb;
+    }
+    return String(a).localeCompare(String(b), "ko-KR");
+  });
+  const selectedBannedArea = state.adminBannedAreaId;
+  const selectedBannedKey = state.adminBannedSelectedKey;
+  bannedAreaIds.forEach((areaId) => {
+    const list = bannedByArea[areaId] || [];
     const item = document.createElement("div");
     item.className = "list-item";
-    const title = document.createElement("div");
-    title.textContent = `${card["구역번호"] || ""} - ${card["카드번호"] || ""}`;
-    const sub = document.createElement("div");
-    const tags = [];
-    if (isTrueValue(card["방문금지"])) {
-      tags.push("방문금지");
+    item.dataset.areaId = areaId;
+    const header = document.createElement("div");
+    header.textContent = `구역 ${areaId} · 카드 ${list.length}장`;
+    item.appendChild(header);
+    const box = document.createElement("div");
+    const expanded = selectedBannedArea === areaId;
+    if (!expanded) {
+      box.style.display = "none";
     }
-    if (isTrueValue(card["6개월"])) {
-      tags.push("6개월");
+    if (expanded) {
+      const table = document.createElement("table");
+      table.className = "admin-table";
+      const thead = document.createElement("thead");
+      const headRow = document.createElement("tr");
+      ["카드번호", "상태", "선택"].forEach((text) => {
+        const th = document.createElement("th");
+        th.textContent = text;
+        headRow.appendChild(th);
+      });
+      thead.appendChild(headRow);
+      const tbody = document.createElement("tbody");
+      list.forEach((card) => {
+        const tr = document.createElement("tr");
+        const cardNo = String(card["카드번호"] || "");
+        const key = `${areaId}__${cardNo}`;
+        const cardTd = document.createElement("td");
+        cardTd.textContent = cardNo;
+        const stateTd = document.createElement("td");
+        const tags = [];
+        if (isTrueValue(card["방문금지"])) {
+          tags.push("방문금지");
+        }
+        if (isTrueValue(card["6개월"])) {
+          tags.push("6개월");
+        }
+        stateTd.textContent = tags.join(", ");
+        const actionTd = document.createElement("td");
+        const selectBtn = document.createElement("button");
+        selectBtn.type = "button";
+        selectBtn.textContent = "선택";
+        selectBtn.addEventListener("click", () => {
+          state.adminBannedAreaId = areaId;
+          state.adminBannedSelectedKey = key;
+          renderAdminPanel();
+        });
+        actionTd.appendChild(selectBtn);
+        tr.append(cardTd, stateTd, actionTd);
+        tbody.appendChild(tr);
+      });
+      table.append(thead, tbody);
+      box.appendChild(table);
+      const editorKey =
+        selectedBannedKey && selectedBannedKey.startsWith(`${areaId}__`)
+          ? selectedBannedKey
+          : null;
+      if (editorKey) {
+        const target = list.find(
+          (card) =>
+            `${areaId}__${String(card["카드번호"] || "")}` === editorKey
+        );
+        if (target) {
+          const editor = document.createElement("div");
+          const info = document.createElement("div");
+          info.textContent = `구역 ${areaId}, 카드 ${String(
+            target["카드번호"] || ""
+          )}`;
+          const stateText = document.createElement("div");
+          const tags = [];
+          if (isTrueValue(target["방문금지"])) {
+            tags.push("방문금지");
+          }
+          if (isTrueValue(target["6개월"])) {
+            tags.push("6개월");
+          }
+          stateText.textContent = `현재 상태: ${tags.join(", ")}`;
+          const clearBtn = document.createElement("button");
+          clearBtn.type = "button";
+          clearBtn.textContent = "해제";
+          clearBtn.addEventListener("click", async () => {
+            try {
+              const res = await apiRequest("updateCardFlags", {
+                areaId,
+                cardNumber: String(target["카드번호"] || ""),
+                sixMonths: false,
+                banned: false
+              });
+              if (!res.success) {
+                alert(res.message || "카드 상태 변경에 실패했습니다.");
+                return;
+              }
+              const cards = state.data.cards || [];
+              const found = cards.find(
+                (c) =>
+                  String(c["구역번호"] || "") === String(areaId) &&
+                  String(c["카드번호"] || "") ===
+                    String(target["카드번호"] || "")
+              );
+              if (found) {
+                found["6개월"] = res.sixMonths;
+                found["방문금지"] = res.banned;
+              }
+              renderAreas();
+              renderCards();
+              state.adminBannedSelectedKey = null;
+              renderAdminPanel();
+              setStatus("방문금지/6개월 상태가 해제되었습니다.");
+            } catch (e) {
+              alert("카드 상태 변경 중 오류가 발생했습니다.");
+            }
+          });
+          editor.appendChild(info);
+          editor.appendChild(stateText);
+          editor.appendChild(clearBtn);
+          box.appendChild(editor);
+        }
+      }
     }
-    sub.textContent = tags.join(", ");
-    item.append(title, sub);
+    item.appendChild(box);
+    header.addEventListener("click", () => {
+      if (state.adminBannedAreaId === areaId) {
+        state.adminBannedAreaId = null;
+        state.adminBannedSelectedKey = null;
+      } else {
+        state.adminBannedAreaId = areaId;
+        state.adminBannedSelectedKey = null;
+      }
+      renderAdminPanel();
+    });
     elements.bannedCardList.appendChild(item);
   });
 };
@@ -1793,9 +2268,63 @@ elements.sideMenu.addEventListener("click", (event) => {
     renderCards();
     renderAdminPanel();
   } else if (key === "visits") {
-    renderVisitsView();
-    renderAdminPanel();
+    state.completionExpandedAreaId = null;
+    if (elements.completionOverlay) {
+      elements.completionOverlay.classList.remove("hidden");
+      document.body.style.overflow = "hidden";
+      if (elements.completionAreaList) {
+        const box = elements.completionAreaList;
+        box.innerHTML = "";
+        const completions = state.data.completions || [];
+        const byArea = {};
+        completions.forEach((row) => {
+          const areaId = String(row["구역번호"] || row["areaId"] || "");
+          if (!areaId) {
+            return;
+          }
+          if (!byArea[areaId]) {
+            byArea[areaId] = [];
+          }
+          byArea[areaId].push(row);
+        });
+        const areaIds = Object.keys(byArea).sort((a, b) => {
+          const na = Number(a);
+          const nb = Number(b);
+          if (!Number.isNaN(na) && !Number.isNaN(nb)) {
+            return na - nb;
+          }
+          return String(a).localeCompare(String(b), "ko-KR");
+        });
+        if (!areaIds.length) {
+          const empty = document.createElement("div");
+          empty.className = "list-item";
+          empty.textContent = "완료 내역이 없습니다.";
+          box.appendChild(empty);
+        } else {
+          areaIds.forEach((areaId) => {
+            const item = document.createElement("div");
+            item.className = "list-item";
+            item.textContent = `구역 ${areaId} · ${byArea[areaId].length}회 완료`;
+            item.addEventListener("click", () => {
+              state.completionExpandedAreaId = areaId;
+              elements.completionOverlay.classList.add("hidden");
+              document.body.style.overflow = "";
+              renderVisitsView();
+              renderAdminPanel();
+            });
+            box.appendChild(item);
+          });
+        }
+      }
+    } else {
+      renderVisitsView();
+      renderAdminPanel();
+    }
   } else if (key === "admin") {
+    if (elements.adminOverlay) {
+      elements.adminOverlay.classList.remove("hidden");
+      document.body.style.overflow = "hidden";
+    }
     renderAdminPanel();
   } else if (key === "car-assign") {
     resetCarAssignmentsFromSaved();
@@ -1816,6 +2345,279 @@ elements.carAssignOverlay.addEventListener("click", (event) => {
     document.body.style.overflow = "";
   }
 });
+
+if (elements.closeAdmin) {
+  elements.closeAdmin.addEventListener("click", () => {
+    elements.adminOverlay.classList.add("hidden");
+    document.body.style.overflow = "";
+  });
+}
+
+if (elements.adminOverlay) {
+  elements.adminOverlay.addEventListener("click", (event) => {
+    if (event.target === elements.adminOverlay) {
+      elements.adminOverlay.classList.add("hidden");
+      document.body.style.overflow = "";
+    }
+  });
+}
+
+if (elements.closeCompletion) {
+  elements.closeCompletion.addEventListener("click", () => {
+    elements.completionOverlay.classList.add("hidden");
+    document.body.style.overflow = "";
+  });
+}
+
+if (elements.completionOverlay) {
+  elements.completionOverlay.addEventListener("click", (event) => {
+    if (event.target === elements.completionOverlay) {
+      elements.completionOverlay.classList.add("hidden");
+      document.body.style.overflow = "";
+    }
+  });
+}
+
+if (elements.adminCardAdd) {
+  elements.adminCardAdd.addEventListener("click", async () => {
+    const areaId = window.prompt("구역번호를 입력해 주세요.");
+    if (!areaId) {
+      return;
+    }
+    const cardNumber = window.prompt("카드번호를 입력해 주세요.");
+    if (!cardNumber) {
+      return;
+    }
+    const address = window.prompt("주소를 입력해 주세요. (없으면 빈칸)");
+    const detailAddress = window.prompt("상세주소를 입력해 주세요. (없으면 빈칸)");
+    const memo = window.prompt("비고를 입력해 주세요. (없으면 빈칸)");
+    try {
+      const res = await apiRequest("upsertCard", {
+        areaId,
+        cardNumber,
+        address: address || "",
+        detailAddress: detailAddress || "",
+        memo: memo || ""
+      });
+      if (!res.success) {
+        alert(res.message || "구역카드 저장에 실패했습니다.");
+        return;
+      }
+      state.data.cards = res.cards || [];
+      renderAreas();
+      renderCards();
+      renderAdminPanel();
+      setStatus("구역카드가 저장되었습니다.");
+    } catch (e) {
+      alert("구역카드 저장 중 오류가 발생했습니다.");
+    }
+  });
+}
+
+if (elements.adminCardDelete) {
+  elements.adminCardDelete.addEventListener("click", async () => {
+    const areaId = window.prompt("삭제할 구역번호를 입력해 주세요.");
+    if (!areaId) {
+      return;
+    }
+    const cardNumber = window.prompt("삭제할 카드번호를 입력해 주세요.");
+    if (!cardNumber) {
+      return;
+    }
+    if (!window.confirm(`구역 ${areaId}, 카드 ${cardNumber}를 삭제하시겠습니까?`)) {
+      return;
+    }
+    try {
+      const res = await apiRequest("deleteCard", {
+        areaId,
+        cardNumber
+      });
+      if (!res.success) {
+        alert(res.message || "구역카드 삭제에 실패했습니다.");
+        return;
+      }
+      state.data.cards = res.cards || [];
+      renderAreas();
+      renderCards();
+      renderAdminPanel();
+      setStatus("구역카드가 삭제되었습니다.");
+    } catch (e) {
+      alert("구역카드 삭제 중 오류가 발생했습니다.");
+    }
+  });
+}
+
+if (elements.adminEvAdd) {
+  elements.adminEvAdd.addEventListener("click", async () => {
+    const name = window.prompt("전도인 이름을 입력해 주세요.");
+    if (!name) {
+      return;
+    }
+    const gender = window.prompt("성별을 입력해 주세요. (예: 남, 여)");
+    const role = window.prompt("역할을 입력해 주세요. (예: 전도인, 인도자, 관리자)");
+    const driver = window.prompt("운전자 여부를 입력해 주세요. (Y/N)");
+    const capacityText = window.prompt("차량 정원 인원을 입력해 주세요. (숫자, 없으면 빈칸)");
+    const spouse = window.prompt("부부 이름을 입력해 주세요. (없으면 빈칸)");
+    const password = window.prompt("비밀번호를 입력해 주세요. (없으면 기존 유지 또는 빈칸)");
+    const driverFlag =
+      driver && (driver.toUpperCase() === "Y" || driver === "1" || driver.toLowerCase() === "true");
+    const capacity = capacityText ? Number(capacityText) || 0 : "";
+    try {
+      const res = await apiRequest("upsertEvangelist", {
+        name,
+        gender: gender || "",
+        role: role || "",
+        driver: driverFlag,
+        capacity: capacity === "" ? "" : String(capacity),
+        spouse: spouse || "",
+        password: password || ""
+      });
+      if (!res.success) {
+        alert(res.message || "전도인 저장에 실패했습니다.");
+        return;
+      }
+      state.data.evangelists = res.evangelists || [];
+      renderAdminPanel();
+      setStatus("전도인 정보가 저장되었습니다.");
+    } catch (e) {
+      alert("전도인 저장 중 오류가 발생했습니다.");
+    }
+  });
+}
+
+if (elements.adminEvDelete) {
+  elements.adminEvDelete.addEventListener("click", async () => {
+    const name = window.prompt("삭제할 전도인 이름을 입력해 주세요.");
+    if (!name) {
+      return;
+    }
+    if (!window.confirm(`${name} 전도인을 삭제하시겠습니까?`)) {
+      return;
+    }
+    try {
+      const res = await apiRequest("deleteEvangelist", { name });
+      if (!res.success) {
+        alert(res.message || "전도인 삭제에 실패했습니다.");
+        return;
+      }
+      state.data.evangelists = res.evangelists || [];
+      renderAdminPanel();
+      setStatus("전도인이 삭제되었습니다.");
+    } catch (e) {
+      alert("전도인 삭제 중 오류가 발생했습니다.");
+    }
+  });
+}
+
+if (elements.adminCarEdit) {
+  elements.adminCarEdit.addEventListener("click", () => {
+    alert("차량 정보는 전도인 표에서 직접 수정할 수 있습니다.");
+  });
+}
+
+if (elements.evangelistList) {
+  elements.evangelistList.addEventListener("click", async (event) => {
+    const button = event.target.closest("button[data-action]");
+    if (!button) {
+      return;
+    }
+    const action = button.dataset.action;
+    const rowEl = button.closest("tr");
+    if (!rowEl) {
+      return;
+    }
+    const isNew = rowEl.dataset.new === "true";
+    const getInput = (field) =>
+      rowEl.querySelector('input[data-field="' + field + '"]') ||
+      rowEl.querySelector('select[data-field="' + field + '"]');
+    if (action === "create-ev") {
+      const nameInput = getInput("name");
+      const name = nameInput ? nameInput.value.trim() : "";
+      if (!name) {
+        alert("이름을 입력해 주세요.");
+        return;
+      }
+      const genderInput = getInput("gender");
+      const roleInput = getInput("role");
+      const driverInput = getInput("driver");
+      const capInput = getInput("capacity");
+      const spouseInput = getInput("spouse");
+      const pwInput = getInput("password");
+      const payload = {
+        name,
+        gender: genderInput ? genderInput.value.trim() : "",
+        role: roleInput ? roleInput.value.trim() : "",
+        driver: driverInput ? driverInput.checked : false,
+        capacity: capInput && capInput.value ? String(Number(capInput.value) || 0) : "",
+        spouse: spouseInput ? spouseInput.value.trim() : "",
+        password: pwInput ? pwInput.value : ""
+      };
+      try {
+        const res = await apiRequest("upsertEvangelist", payload);
+        if (!res.success) {
+          alert(res.message || "전도인 저장에 실패했습니다.");
+          return;
+        }
+        state.data.evangelists = res.evangelists || [];
+        renderAdminPanel();
+        setStatus("전도인이 추가되었습니다.");
+      } catch (e) {
+        alert("전도인 저장 중 오류가 발생했습니다.");
+      }
+      return;
+    }
+    const name = rowEl.dataset.name || button.dataset.name || "";
+    if (!name) {
+      alert("이름 정보를 찾을 수 없습니다.");
+      return;
+    }
+    if (action === "save-ev") {
+      const genderInput = getInput("gender");
+      const roleInput = getInput("role");
+      const driverInput = getInput("driver");
+      const capInput = getInput("capacity");
+      const spouseInput = getInput("spouse");
+      const pwInput = getInput("password");
+      const payload = {
+        name,
+        gender: genderInput ? genderInput.value.trim() : "",
+        role: roleInput ? roleInput.value.trim() : "",
+        driver: driverInput ? driverInput.checked : false,
+        capacity: capInput && capInput.value ? String(Number(capInput.value) || 0) : "",
+        spouse: spouseInput ? spouseInput.value.trim() : "",
+        password: pwInput ? pwInput.value : ""
+      };
+      try {
+        const res = await apiRequest("upsertEvangelist", payload);
+        if (!res.success) {
+          alert(res.message || "전도인 저장에 실패했습니다.");
+          return;
+        }
+        state.data.evangelists = res.evangelists || [];
+        renderAdminPanel();
+        setStatus("전도인 정보가 저장되었습니다.");
+      } catch (e) {
+        alert("전도인 저장 중 오류가 발생했습니다.");
+      }
+    } else if (action === "delete-ev") {
+      if (!window.confirm(`${name} 전도인을 삭제하시겠습니까?`)) {
+        return;
+      }
+      try {
+        const res = await apiRequest("deleteEvangelist", { name });
+        if (!res.success) {
+          alert(res.message || "전도인 삭제에 실패했습니다.");
+          return;
+        }
+        state.data.evangelists = res.evangelists || [];
+        renderAdminPanel();
+        setStatus("전도인이 삭제되었습니다.");
+      } catch (e) {
+        alert("전도인 삭제 중 오류가 발생했습니다.");
+      }
+    }
+  });
+}
 
 elements.carAssignAuto.addEventListener("click", () => {
   autoAssignCars();
@@ -1842,6 +2644,14 @@ elements.carAssignAdd.addEventListener("click", () => {
   state.carAssignments = cars;
   renderCarAssignPopup();
 });
+
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker
+      .register("service-worker.js")
+      .catch(() => {});
+  });
+}
 
 elements.carAssignReset.addEventListener("click", async () => {
   await resetCarAssignmentsOnServer();
