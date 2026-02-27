@@ -927,7 +927,7 @@ const renderAreas = () => {
     if (
       areaCompletionStatus(grouped[areaId]) &&
       state.user &&
-      state.user.role === "인도자"
+      (state.user.role === "인도자" || state.user.role === "관리자")
     ) {
       overlayItem.appendChild(createStartButton());
       inlineItem.appendChild(createStartButton());
