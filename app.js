@@ -23,7 +23,8 @@ const state = {
   filterStatus: "all",
   filterVisit: "all",
   editingVisit: null,
-  statusTimer: null
+  statusTimer: null,
+  scrollToSelectedCard: false
 };
 
 const elements = {
@@ -56,6 +57,7 @@ const elements = {
   completionList: document.getElementById("completion-list"),
   visitList: document.getElementById("visit-list"),
   evangelistList: document.getElementById("evangelist-list"),
+  bannedCardList: document.getElementById("banned-card-list"),
   searchInput: document.getElementById("search-input"),
   searchButton: document.getElementById("search-button"),
   filterArea: document.getElementById("filter-area"),
@@ -321,7 +323,11 @@ const renderAreas = () => {
     const leftItem = createItem();
     const overlayItem = createItem();
     const inlineItem = createItem();
-    if (areaCompletionStatus(grouped[areaId])) {
+    if (
+      areaCompletionStatus(grouped[areaId]) &&
+      state.user &&
+      state.user.role === "인도자"
+    ) {
       overlayItem.appendChild(createStartButton());
       inlineItem.appendChild(createStartButton());
     }
@@ -645,11 +651,31 @@ const renderCards = () => {
       expanded.appendChild(container);
     }
     container.appendChild(elements.cardList);
-    expanded.scrollIntoView({ behavior: "smooth", block: "start" });
+    if (!state.scrollToSelectedCard) {
+      expanded.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
   } else {
     elements.cardListHome.appendChild(elements.cardList);
   }
   elements.cardList.classList.remove("hidden");
+  if (state.scrollToSelectedCard && state.selectedCard) {
+    const targetNumber = String(state.selectedCard["카드번호"] || "");
+    const cardsEls = elements.cardList.querySelectorAll(".card");
+    let target = null;
+    cardsEls.forEach((el) => {
+      if (target) {
+        return;
+      }
+      const strong = el.querySelector(".card-header strong");
+      if (strong && String(strong.textContent || "") === targetNumber) {
+        target = el;
+      }
+    });
+    if (target) {
+      target.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }
+  state.scrollToSelectedCard = false;
 };
 
 const renderVisitsView = () => {
@@ -783,13 +809,58 @@ const renderAdminPanel = () => {
   elements.evangelistList.innerHTML = state.data.evangelists
     .map((row) => `<div class="list-item">${row["이름"]} | ${row["역할"]}</div>`)
     .join("");
+  const bannedCards = state.data.cards.filter(
+    (card) => isTrueValue(card["방문금지"]) || isTrueValue(card["6개월"])
+  );
+  elements.bannedCardList.innerHTML = "";
+  bannedCards.forEach((card) => {
+    const item = document.createElement("div");
+    item.className = "list-item";
+    const title = document.createElement("div");
+    title.textContent = `${card["구역번호"] || ""} - ${card["카드번호"] || ""}`;
+    const sub = document.createElement("div");
+    const tags = [];
+    if (isTrueValue(card["방문금지"])) {
+      tags.push("방문금지");
+    }
+    if (isTrueValue(card["6개월"])) {
+      tags.push("6개월");
+    }
+    sub.textContent = tags.join(", ");
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = "해제";
+    button.addEventListener("click", async () => {
+      try {
+        setLoading(true, "카드 상태 변경 중...");
+        const res = await apiRequest("updateCardFlags", {
+          areaId: card["구역번호"],
+          cardNumber: card["카드번호"],
+          sixMonths: "false",
+          banned: "false"
+        });
+        if (!res.success) {
+          alert(res.message || "카드 상태 변경에 실패했습니다.");
+          return;
+        }
+        card["6개월"] = false;
+        card["방문금지"] = false;
+        renderAdminPanel();
+        renderCards();
+      } finally {
+        setLoading(false);
+      }
+    });
+    item.append(title, sub, button);
+    elements.bannedCardList.appendChild(item);
+  });
 };
 
 const selectArea = (areaId) => {
   state.selectedArea = areaId;
   state.selectedCard = null;
   elements.areaTitle.textContent = `구역 ${areaId}`;
-  elements.leaderActions.classList.toggle("hidden", state.user.role === "전도인");
+  elements.leaderActions.classList.add("hidden");
   renderAreas();
   renderCards();
   setStatus("");
@@ -797,6 +868,7 @@ const selectArea = (areaId) => {
 
 const selectCard = (card) => {
   state.selectedCard = card;
+  state.scrollToSelectedCard = true;
   state.editingVisit = null;
   elements.visitTitle.textContent = `카드 ${card["카드번호"]} 방문 기록`;
   elements.visitDate.value = todayISO();
