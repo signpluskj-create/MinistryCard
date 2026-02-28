@@ -1226,26 +1226,28 @@ const renderCards = () => {
     if (state.selectedCard && card["카드번호"] === state.selectedCard["카드번호"]) {
       const oneYearAgo = new Date();
       oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
-    const normalizeId = (v) =>
-      String(v == null ? "" : v).trim().replace(/\s+/g, "");
-    const allRows = (state.data.visits || [])
-        .filter(
-          (row) =>
-          normalizeId(row["구역카드"]) === normalizeId(card["카드번호"])
-      );
+      const normalizeId = (v) =>
+        String(v == null ? "" : v).trim().replace(/\s+/g, "");
+      const cardId = normalizeId(card["카드번호"]);
+      const allRows = (state.data.visits || []).filter((row) => {
+        const rowCardId = normalizeId(
+          row["구역카드"] || row["카드번호"] || row["구역카드번호"]
+        );
+        return rowCardId && rowCardId === cardId;
+      });
       const lastYearRows = allRows.filter((row) => {
         const d = parseVisitDate(getVisitDateValue(row));
         return d && d >= oneYearAgo;
       });
-    const historyRows = (lastYearRows.length ? lastYearRows : allRows).sort(
-      (a, b) => {
-        const db = parseVisitDate(getVisitDateValue(b));
-        const da = parseVisitDate(getVisitDateValue(a));
-        const tb = db ? db.getTime() : 0;
-        const ta = da ? da.getTime() : 0;
-        return tb - ta;
-      }
-    );
+      const historyRows = (lastYearRows.length ? lastYearRows : allRows).sort(
+        (a, b) => {
+          const db = parseVisitDate(getVisitDateValue(b));
+          const da = parseVisitDate(getVisitDateValue(a));
+          const tb = db ? db.getTime() : 0;
+          const ta = da ? da.getTime() : 0;
+          return tb - ta;
+        }
+      );
       const history = document.createElement("div");
       history.className = "card-history";
       if (!historyRows.length) {
