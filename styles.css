@@ -763,6 +763,11 @@ button.secondary {
   opacity: 0.6;
 }
 
+.car-member.tap-selected {
+  border-color: #1f6feb;
+  box-shadow: 0 0 0 2px rgba(31, 111, 235, 0.5);
+}
+
 @media (max-width: 768px) {
   #car-assign-overlay .area-overlay-content {
     max-width: 100%;
@@ -778,7 +783,7 @@ button.secondary {
     margin-bottom: 0;
   }
   .car-assign-selected {
-    grid-template-columns: repeat(3, minmax(80px, 1fr));
+    grid-template-columns: repeat(2, minmax(100px, 1fr));
   }
   .car-assign-grid {
     grid-template-columns: repeat(2, minmax(140px, 1fr));

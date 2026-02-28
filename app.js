@@ -36,6 +36,8 @@ const state = {
   currentMenu: "cards"
 };
 
+let carAssignTapSelection = null;
+
 const elements = {
   configPanel: document.getElementById("config-panel"),
   loginPanel: document.getElementById("login-panel"),
@@ -2211,6 +2213,75 @@ elements.carAssignPanel.addEventListener("drop", (event) => {
   if (!name || !fromCarId || !toCarId) {
     return;
   }
+  const cars = state.carAssignments || [];
+  const fromCar = cars.find((c) => String(c.carId) === String(fromCarId));
+  const toCar = cars.find((c) => String(c.carId) === String(toCarId));
+  if (!fromCar || !toCar) {
+    return;
+  }
+  if (fromCarId === toCarId) {
+    const rest = (fromCar.members || []).filter((n) => n !== name);
+    fromCar.members = [name].concat(rest);
+  } else {
+    fromCar.members = (fromCar.members || []).filter((n) => n !== name);
+    if (!toCar.members) {
+      toCar.members = [];
+    }
+    if (!toCar.members.includes(name)) {
+      toCar.members.push(name);
+    }
+  }
+  cars.forEach((car) => {
+    const first = (car.members || [])[0];
+    if (first) {
+      car.driver = first;
+    }
+  });
+  renderCarAssignPopup();
+});
+
+elements.carAssignPanel.addEventListener("click", (event) => {
+  const zone = event.target.closest(".car-members");
+  if (!zone) {
+    return;
+  }
+  const member = event.target.closest(".car-member");
+  const toCarId = zone.dataset.carId || "";
+  if (!toCarId) {
+    return;
+  }
+  if (!carAssignTapSelection) {
+    if (!member) {
+      return;
+    }
+    const name = member.dataset.name || "";
+    const fromCarId = member.dataset.carId || "";
+    if (!name || !fromCarId) {
+      return;
+    }
+    const prev = elements.carAssignPanel.querySelector(
+      ".car-member.tap-selected"
+    );
+    if (prev) {
+      prev.classList.remove("tap-selected");
+    }
+    member.classList.add("tap-selected");
+    carAssignTapSelection = { name, carId: fromCarId };
+    return;
+  }
+  const selection = carAssignTapSelection;
+  carAssignTapSelection = null;
+  const prev = elements.carAssignPanel.querySelector(
+    ".car-member.tap-selected"
+  );
+  if (prev) {
+    prev.classList.remove("tap-selected");
+  }
+  if (!selection.name || !selection.carId) {
+    return;
+  }
+  const name = selection.name;
+  const fromCarId = selection.carId;
   const cars = state.carAssignments || [];
   const fromCar = cars.find((c) => String(c.carId) === String(fromCarId));
   const toCar = cars.find((c) => String(c.carId) === String(toCarId));
