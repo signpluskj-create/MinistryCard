@@ -563,17 +563,18 @@ button.secondary {
 }
 
 .start-service-btn {
-  background: #1e3a8a;
-  color: #ffffff;
+  background: #ffffff;
+  color: #1e3a8a;
+  border: 1px solid #1e3a8a;
 }
 
 .start-service-btn:hover,
 .start-service-btn:focus {
-  background: #1d4ed8;
+  background: #f3f4f6;
 }
 
 .start-service-btn:active {
-  background: #1e40af;
+  background: #e5e7eb;
 }
 
 .visit-form {
@@ -641,60 +642,96 @@ button.secondary {
 
 #evangelist-list {
   overflow-x: auto;
+  max-width: 900px;
+  margin: 0 auto;
 }
 
 .admin-table-wide {
-  min-width: 900px;
+  width: 100%;
+  min-width: 500px;
+  table-layout: fixed;
 }
 
 .admin-table-wide th,
 .admin-table-wide td {
   white-space: nowrap;
+  text-align: center;
 }
 
 .admin-table-wide input,
 .admin-table-wide select {
-  width: auto;
-  max-width: 60px;
+  width: 100%;
+  max-width: none;
   padding: 2px 4px;
   font-size: 11px;
 }
 
+.admin-card-table {
+  width: 100%;
+  min-width: 500px;
+  table-layout: fixed;
+}
+
+.admin-card-table th,
+.admin-card-table td {
+  text-align: center;
+}
+
+.admin-card-table th:nth-child(1),
+.admin-card-table td:nth-child(1) {
+  width: 17%;
+}
+
+.admin-card-table th:nth-child(2),
+.admin-card-table td:nth-child(2) {
+  width: 32%;
+}
+
 .admin-table-wide th:nth-child(1),
 .admin-table-wide td:nth-child(1) {
-  width: 6rem;
+  width: 11.1%;
 }
 
 .admin-table-wide th:nth-child(2),
 .admin-table-wide td:nth-child(2) {
-  width: 2rem;
+  width: 7.4%;
 }
 
 .admin-table-wide th:nth-child(3),
 .admin-table-wide td:nth-child(3) {
-  width: 6rem;
+  width: 7.4%;
 }
 
 .admin-table-wide th:nth-child(4),
 .admin-table-wide td:nth-child(4) {
-  width: 2rem;
-  text-align: center;
+  width: 11.1%;
 }
 
 .admin-table-wide th:nth-child(5),
 .admin-table-wide td:nth-child(5) {
-  width: 1.5rem;
+  width: 11.1%;
   text-align: center;
 }
 
 .admin-table-wide th:nth-child(6),
 .admin-table-wide td:nth-child(6) {
-  width: 6rem;
+  width: 11.1%;
+  text-align: center;
 }
 
 .admin-table-wide th:nth-child(7),
 .admin-table-wide td:nth-child(7) {
-  width: 8rem;
+  width: 11.1%;
+}
+
+.admin-table-wide th:nth-child(8),
+.admin-table-wide td:nth-child(8) {
+  width: 11.1%;
+}
+
+.admin-table-wide th:nth-child(9),
+.admin-table-wide td:nth-child(9) {
+  width: 18.5%;
 }
 
 .admin-actions-cell {

@@ -1566,10 +1566,11 @@ const renderAdminPanel = () => {
     }
     if (expanded) {
       const cardTable = document.createElement("table");
-      cardTable.className = "admin-table";
+      cardTable.className = "admin-table admin-card-table";
+      cardTable.dataset.areaId = areaId;
       const cardThead = document.createElement("thead");
       const cardHeadRow = document.createElement("tr");
-      ["카드번호", "주소", "상세주소", "비고", "선택"].forEach((text) => {
+      ["카드번호", "주소", "상세주소", "비고", "작업"].forEach((text) => {
         const th = document.createElement("th");
         th.textContent = text;
         cardHeadRow.appendChild(th);
@@ -1579,123 +1580,82 @@ const renderAdminPanel = () => {
       cards.forEach((card) => {
         const tr = document.createElement("tr");
         const cardNo = String(card["카드번호"] || "");
-        const key = `${areaId}__${cardNo}`;
+        tr.dataset.areaId = areaId;
+        tr.dataset.cardNumber = cardNo;
         const noTd = document.createElement("td");
-        noTd.textContent = cardNo;
+        const noInput = document.createElement("input");
+        noInput.type = "text";
+        noInput.value = cardNo;
+        noInput.readOnly = true;
+        noTd.appendChild(noInput);
         const addrTd = document.createElement("td");
-        addrTd.textContent = String(card["주소"] || "");
+        const addrInput = document.createElement("input");
+        addrInput.type = "text";
+        addrInput.value = String(card["주소"] || "");
+        addrInput.dataset.field = "address";
+        addrTd.appendChild(addrInput);
         const detailTd = document.createElement("td");
-        detailTd.textContent = String(card["상세주소"] || "");
+        const detailInput = document.createElement("input");
+        detailInput.type = "text";
+        detailInput.value = String(card["상세주소"] || "");
+        detailInput.dataset.field = "detailAddress";
+        detailTd.appendChild(detailInput);
         const memoTd = document.createElement("td");
-        memoTd.textContent = String(card["비고"] || "");
+        const memoInput = document.createElement("input");
+        memoInput.type = "text";
+        memoInput.value = String(card["비고"] || "");
+        memoInput.dataset.field = "memo";
+        memoTd.appendChild(memoInput);
         const actionTd = document.createElement("td");
-        const selectBtn = document.createElement("button");
-        selectBtn.type = "button";
-        selectBtn.textContent = "선택";
-        selectBtn.addEventListener("click", () => {
-          state.adminCardsAreaId = areaId;
-          state.adminCardsSelectedKey = key;
-          renderAdminPanel();
-        });
-        actionTd.appendChild(selectBtn);
+        actionTd.className = "admin-actions-cell";
+        const saveBtn = document.createElement("button");
+        saveBtn.type = "button";
+        saveBtn.textContent = "저장";
+        saveBtn.dataset.cardAction = "save-card";
+        const deleteBtn = document.createElement("button");
+        deleteBtn.type = "button";
+        deleteBtn.textContent = "삭제";
+        deleteBtn.dataset.cardAction = "delete-card";
+        actionTd.appendChild(saveBtn);
+        actionTd.appendChild(deleteBtn);
         tr.append(noTd, addrTd, detailTd, memoTd, actionTd);
         cardTbody.appendChild(tr);
       });
+      const newTr = document.createElement("tr");
+      newTr.dataset.new = "true";
+      newTr.dataset.areaId = areaId;
+      const newNoTd = document.createElement("td");
+      const newNoInput = document.createElement("input");
+      newNoInput.type = "text";
+      newNoInput.placeholder = "새 카드번호";
+      newNoInput.dataset.field = "cardNumber";
+      newNoTd.appendChild(newNoInput);
+      const newAddrTd = document.createElement("td");
+      const newAddrInput = document.createElement("input");
+      newAddrInput.type = "text";
+      newAddrInput.dataset.field = "address";
+      newAddrTd.appendChild(newAddrInput);
+      const newDetailTd = document.createElement("td");
+      const newDetailInput = document.createElement("input");
+      newDetailInput.type = "text";
+      newDetailInput.dataset.field = "detailAddress";
+      newDetailTd.appendChild(newDetailInput);
+      const newMemoTd = document.createElement("td");
+      const newMemoInput = document.createElement("input");
+      newMemoInput.type = "text";
+      newMemoInput.dataset.field = "memo";
+      newMemoTd.appendChild(newMemoInput);
+      const newActionTd = document.createElement("td");
+      newActionTd.className = "admin-actions-cell";
+      const newSaveBtn = document.createElement("button");
+      newSaveBtn.type = "button";
+      newSaveBtn.textContent = "추가";
+      newSaveBtn.dataset.cardAction = "create-card";
+      newActionTd.appendChild(newSaveBtn);
+      newTr.append(newNoTd, newAddrTd, newDetailTd, newMemoTd, newActionTd);
+      cardTbody.appendChild(newTr);
       cardTable.append(cardThead, cardTbody);
       cardsBox.appendChild(cardTable);
-      const editorKey = selectedCardKey && selectedCardKey.startsWith(`${areaId}__`) ? selectedCardKey : null;
-      if (editorKey) {
-          const editor = document.createElement("div");
-          const target = cards.find((card) => `${areaId}__${String(card["카드번호"] || "")}` === editorKey);
-          if (target) {
-            const areaText = document.createElement("div");
-            areaText.textContent = `${areaId}, 카드 ${String(target["카드번호"] || "")}`;
-          const addrInput = document.createElement("input");
-          addrInput.type = "text";
-          addrInput.value = String(target["주소"] || "");
-          const detailInput = document.createElement("input");
-          detailInput.type = "text";
-          detailInput.value = String(target["상세주소"] || "");
-          const memoInput = document.createElement("input");
-          memoInput.type = "text";
-          memoInput.value = String(target["비고"] || "");
-          const saveBtn = document.createElement("button");
-          saveBtn.type = "button";
-          saveBtn.textContent = "저장";
-          saveBtn.addEventListener("click", async () => {
-            try {
-              const res = await apiRequest("upsertCard", {
-                areaId,
-                cardNumber: String(target["카드번호"] || ""),
-                address: addrInput.value || "",
-                detailAddress: detailInput.value || "",
-                memo: memoInput.value || ""
-              });
-              if (!res.success) {
-                alert(res.message || "구역카드 저장에 실패했습니다.");
-                return;
-              }
-              state.data.cards = res.cards || [];
-              renderAreas();
-              renderCards();
-              renderAdminPanel();
-              setStatus("구역카드가 저장되었습니다.");
-            } catch (e) {
-              alert("구역카드 저장 중 오류가 발생했습니다.");
-            }
-          });
-          const deleteBtn = document.createElement("button");
-          deleteBtn.type = "button";
-          deleteBtn.textContent = "삭제";
-          deleteBtn.addEventListener("click", async () => {
-            if (
-              !window.confirm(
-                `구역 ${areaId}, 카드 ${String(
-                  target["카드번호"] || ""
-                )}를 삭제하시겠습니까?`
-              )
-            ) {
-              return;
-            }
-            try {
-              const res = await apiRequest("deleteCard", {
-                areaId,
-                cardNumber: String(target["카드번호"] || "")
-              });
-              if (!res.success) {
-                alert(res.message || "구역카드 삭제에 실패했습니다.");
-                return;
-              }
-              state.data.cards = res.cards || [];
-              renderAreas();
-              renderCards();
-              state.adminCardsSelectedKey = null;
-              renderAdminPanel();
-              setStatus("구역카드가 삭제되었습니다.");
-            } catch (e) {
-              alert("구역카드 삭제 중 오류가 발생했습니다.");
-            }
-          });
-          const addrRow = document.createElement("div");
-          addrRow.textContent = "주소";
-          addrRow.appendChild(addrInput);
-          const detailRow = document.createElement("div");
-          detailRow.textContent = "상세주소";
-          detailRow.appendChild(detailInput);
-          const memoRow = document.createElement("div");
-          memoRow.textContent = "비고";
-          memoRow.appendChild(memoInput);
-          const btnRow = document.createElement("div");
-          btnRow.appendChild(saveBtn);
-          btnRow.appendChild(deleteBtn);
-          editor.appendChild(areaText);
-          editor.appendChild(addrRow);
-          editor.appendChild(detailRow);
-          editor.appendChild(memoRow);
-          editor.appendChild(btnRow);
-          cardsBox.appendChild(editor);
-        }
-      }
     }
     item.appendChild(cardsBox);
     header.addEventListener("click", () => {
@@ -1721,6 +1681,7 @@ const renderAdminPanel = () => {
   [
     "이름",
     "성별",
+    "농인",
     "역할",
     "운전자",
     "정원",
@@ -1738,6 +1699,7 @@ const renderAdminPanel = () => {
     const name = row["이름"] || "";
     const role = row["역할"] || row["권한"] || "";
     const gender = row["성별"] || "";
+    const isDeaf = isTrueValue(row["농인"]);
     const isDriver = isTrueValue(row["운전자"]);
     const cap = row["차량"] != null ? Number(row["차량"]) || 0 : 0;
     const spouse = row["부부"] || "";
@@ -1755,6 +1717,12 @@ const renderAdminPanel = () => {
     genderInput.value = gender;
     genderInput.dataset.field = "gender";
     genderTd.appendChild(genderInput);
+    const deafTd = document.createElement("td");
+    const deafInput = document.createElement("input");
+    deafInput.type = "checkbox";
+    deafInput.checked = isDeaf;
+    deafInput.dataset.field = "deaf";
+    deafTd.appendChild(deafInput);
     const roleTd = document.createElement("td");
     const roleInput = document.createElement("input");
     roleInput.type = "text";
@@ -1802,6 +1770,7 @@ const renderAdminPanel = () => {
     actionTd.appendChild(deleteBtn);
     tr.appendChild(nameTd);
     tr.appendChild(genderTd);
+    tr.appendChild(deafTd);
     tr.appendChild(roleTd);
     tr.appendChild(driverTd);
     tr.appendChild(capTd);
@@ -1823,6 +1792,11 @@ const renderAdminPanel = () => {
   newGenderInput.type = "text";
   newGenderInput.dataset.field = "gender";
   newGenderTd.appendChild(newGenderInput);
+  const newDeafTd = document.createElement("td");
+  const newDeafInput = document.createElement("input");
+  newDeafInput.type = "checkbox";
+  newDeafInput.dataset.field = "deaf";
+  newDeafTd.appendChild(newDeafInput);
   const newRoleTd = document.createElement("td");
   const newRoleInput = document.createElement("input");
   newRoleInput.type = "text";
@@ -1858,6 +1832,7 @@ const renderAdminPanel = () => {
   newActionTd.appendChild(newSaveBtn);
   newTr.appendChild(newNameTd);
   newTr.appendChild(newGenderTd);
+  newTr.appendChild(newDeafTd);
   newTr.appendChild(newRoleTd);
   newTr.appendChild(newDriverTd);
   newTr.appendChild(newCapTd);
@@ -2746,6 +2721,7 @@ if (elements.evangelistList) {
         return;
       }
       const genderInput = getInput("gender");
+      const deafInput = getInput("deaf");
       const roleInput = getInput("role");
       const driverInput = getInput("driver");
       const capInput = getInput("capacity");
@@ -2754,6 +2730,7 @@ if (elements.evangelistList) {
       const payload = {
         name,
         gender: genderInput ? genderInput.value.trim() : "",
+        deaf: deafInput ? !!deafInput.checked : false,
         role: roleInput ? roleInput.value.trim() : "",
         driver: driverInput ? driverInput.checked : false,
         capacity: capInput && capInput.value ? String(Number(capInput.value) || 0) : "",
@@ -2789,6 +2766,7 @@ if (elements.evangelistList) {
       const payload = {
         name,
         gender: genderInput ? genderInput.value.trim() : "",
+        deaf: getInput("deaf") ? !!getInput("deaf").checked : false,
         role: roleInput ? roleInput.value.trim() : "",
         driver: driverInput ? driverInput.checked : false,
         capacity: capInput && capInput.value ? String(Number(capInput.value) || 0) : "",
@@ -2822,6 +2800,120 @@ if (elements.evangelistList) {
         setStatus("전도인이 삭제되었습니다.");
       } catch (e) {
         alert("전도인 삭제 중 오류가 발생했습니다.");
+      }
+    }
+  });
+}
+
+if (elements.completionList) {
+  elements.completionList.addEventListener("click", async (event) => {
+    const button = event.target.closest("button[data-card-action]");
+    if (!button) {
+      return;
+    }
+    const action = button.dataset.cardAction;
+    const rowEl = button.closest("tr");
+    if (!rowEl) {
+      return;
+    }
+    const tableEl = rowEl.closest("table");
+    const areaId =
+      rowEl.dataset.areaId ||
+      (tableEl && tableEl.dataset.areaId) ||
+      state.adminCardsAreaId;
+    if (!areaId) {
+      alert("구역 정보를 찾을 수 없습니다.");
+      return;
+    }
+    const getInput = (field) =>
+      rowEl.querySelector('input[data-field="' + field + '"]');
+    if (action === "create-card") {
+      const cardInput = getInput("cardNumber");
+      const cardNumber = cardInput ? cardInput.value.trim() : "";
+      if (!cardNumber) {
+        alert("카드번호를 입력해 주세요.");
+        return;
+      }
+      const addressInput = getInput("address");
+      const detailInput = getInput("detailAddress");
+      const memoInput = getInput("memo");
+      const payload = {
+        areaId,
+        cardNumber,
+        address: addressInput ? addressInput.value : "",
+        detailAddress: detailInput ? detailInput.value : "",
+        memo: memoInput ? memoInput.value : ""
+      };
+      try {
+        const res = await apiRequest("upsertCard", payload);
+        if (!res.success) {
+          alert(res.message || "구역카드 저장에 실패했습니다.");
+          return;
+        }
+        state.data.cards = res.cards || [];
+        renderAreas();
+        renderCards();
+        renderAdminPanel();
+        setStatus("구역카드가 추가되었습니다.");
+      } catch (e) {
+        alert("구역카드 저장 중 오류가 발생했습니다.");
+      }
+      return;
+    }
+    const baseCardNumber = rowEl.dataset.cardNumber || "";
+    if (!baseCardNumber) {
+      alert("카드번호 정보를 찾을 수 없습니다.");
+      return;
+    }
+    if (action === "save-card") {
+      const addressInput = getInput("address");
+      const detailInput = getInput("detailAddress");
+      const memoInput = getInput("memo");
+      const payload = {
+        areaId,
+        cardNumber: baseCardNumber,
+        address: addressInput ? addressInput.value : "",
+        detailAddress: detailInput ? detailInput.value : "",
+        memo: memoInput ? memoInput.value : ""
+      };
+      try {
+        const res = await apiRequest("upsertCard", payload);
+        if (!res.success) {
+          alert(res.message || "구역카드 저장에 실패했습니다.");
+          return;
+        }
+        state.data.cards = res.cards || [];
+        renderAreas();
+        renderCards();
+        renderAdminPanel();
+        setStatus("구역카드가 저장되었습니다.");
+      } catch (e) {
+        alert("구역카드 저장 중 오류가 발생했습니다.");
+      }
+    } else if (action === "delete-card") {
+      if (
+        !window.confirm(
+          `구역 ${areaId}, 카드 ${baseCardNumber}를 삭제하시겠습니까?`
+        )
+      ) {
+        return;
+      }
+      try {
+        const res = await apiRequest("deleteCard", {
+          areaId,
+          cardNumber: baseCardNumber
+        });
+        if (!res.success) {
+          alert(res.message || "구역카드 삭제에 실패했습니다.");
+          return;
+        }
+        state.data.cards = res.cards || [];
+        renderAreas();
+        renderCards();
+        renderAdminPanel();
+        setStatus("구역카드가 삭제되었습니다.");
+      } catch (e) {
+        alert("구역카드 삭제 중 오류가 발생했습니다.");
       }
     }
   });
