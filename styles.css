@@ -868,7 +868,7 @@ button.secondary {
 
 @media (max-width: 480px) {
   .car-assign-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(120px, 1fr));
   }
   .car-assign-actions button {
     font-size: 12px;
