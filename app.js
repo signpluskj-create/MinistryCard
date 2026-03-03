@@ -38,6 +38,8 @@ const state = {
 };
 
 let carAssignTapSelection = null;
+let carAssignCardSelection = null;
+let carAssignCardMultiSelection = [];
 
 const elements = {
   configPanel: document.getElementById("config-panel"),
@@ -689,6 +691,39 @@ const saveCarAssignments = async () => {
     state.data.assignments = res.assignments || [];
     buildInitialParticipantsFromAssignments();
     buildCarAssignmentsFromServer();
+
+    const cards = state.data.cards || [];
+    const byArea = {};
+    cards.forEach((card) => {
+      const areaId = String(card["구역번호"] || "");
+      const carId = String(card["차량"] || "");
+      const cardNumber = String(card["카드번호"] || "");
+      if (!areaId || !carId || !cardNumber) {
+        return;
+      }
+      if (!byArea[areaId]) {
+        byArea[areaId] = [];
+      }
+      byArea[areaId].push({ cardNumber, carId });
+    });
+    const areaIds = Object.keys(byArea);
+    for (let i = 0; i < areaIds.length; i++) {
+      const areaId = areaIds[i];
+      const pairs = byArea[areaId];
+      if (!pairs.length) continue;
+      const resCards = await apiRequest("assignCardsToCars", {
+        areaId,
+        pairs: JSON.stringify(pairs)
+      });
+      if (!resCards.success) {
+        alert(resCards.message || "구역카드 배정 저장에 실패했습니다.");
+        break;
+      }
+      state.data.cards = resCards.cards || state.data.cards;
+    }
+
+    renderAreas();
+    renderCards();
     renderAdminPanel();
     renderMyCarInfo();
   } finally {
@@ -799,7 +834,65 @@ const renderCarAssignmentsPanel = () => {
       assignedCards.forEach((card) => {
         const span = document.createElement("span");
         span.className = "car-card-tag";
-        span.textContent = String(card["카드번호"] || "");
+        const cardNumber = String(card["카드번호"] || "");
+        const areaId = String(card["구역번호"] || "");
+        span.textContent = cardNumber;
+        span.dataset.cardNumber = cardNumber;
+        span.dataset.areaId = areaId;
+        span.dataset.carId = String(car.carId || "");
+
+        let cardPressTimer = null;
+        const clearCardPressTimer = () => {
+          if (cardPressTimer) {
+            clearTimeout(cardPressTimer);
+            cardPressTimer = null;
+          }
+        };
+        const startCardPressTimer = () => {
+          clearCardPressTimer();
+          cardPressTimer = setTimeout(() => {
+            cardPressTimer = null;
+            const area = span.dataset.areaId || "";
+            const num = span.dataset.cardNumber || "";
+            const fromCar = span.dataset.carId || "";
+            if (!area || !num || !fromCar) {
+              return;
+            }
+            const ok = window.confirm(
+              `차량 ${fromCar}에서 카드 ${num} 배정을 삭제할까요?`
+            );
+            if (!ok) {
+              return;
+            }
+            const cardsAll = state.data.cards || [];
+            const target = cardsAll.find(
+              (card) =>
+                String(card["구역번호"] || "") === String(area) &&
+                String(card["카드번호"] || "") === String(num)
+            );
+            if (target) {
+              target["차량"] = "";
+            }
+            renderCards();
+            renderCarAssignPopup();
+          }, 800);
+        };
+
+        span.addEventListener("mousedown", (event) => {
+          if (event.button !== 0) {
+            return;
+          }
+          startCardPressTimer();
+        });
+        span.addEventListener("touchstart", () => {
+          startCardPressTimer();
+        });
+        ["mouseup", "mouseleave", "touchend", "touchcancel"].forEach(
+          (type) => {
+            span.addEventListener(type, clearCardPressTimer);
+          }
+        );
+
         tagsRow.appendChild(span);
       });
       cardTagsBox.appendChild(tagsRow);
@@ -3054,7 +3147,7 @@ elements.carAssignPanel.addEventListener("drop", (event) => {
   renderCarAssignPopup();
 });
 
-elements.carAssignPanel.addEventListener("click", (event) => {
+elements.carAssignPanel.addEventListener("click", async (event) => {
   const column = event.target.closest(".car-column");
   if (!column) {
     return;
@@ -3063,11 +3156,168 @@ elements.carAssignPanel.addEventListener("click", (event) => {
   if (!zone) {
     return;
   }
-  const member = event.target.closest(".car-member");
   const toCarId = zone.dataset.carId || "";
   if (!toCarId) {
     return;
   }
+  const cardTag = event.target.closest(".car-card-tag");
+
+  // 카드 이동 처리
+  if (cardTag) {
+    const cardNumber = cardTag.dataset.cardNumber || "";
+    const areaId = cardTag.dataset.areaId || "";
+    const fromCarId = cardTag.dataset.carId || "";
+    if (!cardNumber || !areaId || !fromCarId) {
+      return;
+    }
+    if (event.shiftKey || event.ctrlKey || event.metaKey) {
+      const key = `${areaId}:${cardNumber}:${fromCarId}`;
+      const idx = carAssignCardMultiSelection.indexOf(key);
+      if (idx === -1) {
+        carAssignCardMultiSelection.push(key);
+        cardTag.classList.add("car-card-tag-multi");
+      } else {
+        carAssignCardMultiSelection.splice(idx, 1);
+        cardTag.classList.remove("car-card-tag-multi");
+      }
+      carAssignCardSelection = null;
+      carAssignTapSelection = null;
+      return;
+    }
+    if (!carAssignCardSelection) {
+      const prev = elements.carAssignPanel.querySelector(
+        ".car-card-tag-selected"
+      );
+      if (prev) {
+        prev.classList.remove("car-card-tag-selected");
+      }
+      cardTag.classList.add("car-card-tag-selected");
+      carAssignCardSelection = { cardNumber, areaId, carId: fromCarId };
+      carAssignTapSelection = null;
+      carAssignCardMultiSelection = [];
+      const multiPrev = elements.carAssignPanel.querySelectorAll(
+        ".car-card-tag-multi"
+      );
+      multiPrev.forEach((el) => el.classList.remove("car-card-tag-multi"));
+      return;
+    }
+    const selection = carAssignCardSelection;
+    if (toCarId === (selection.carId || "")) {
+      const prev = elements.carAssignPanel.querySelector(
+        ".car-card-tag-selected"
+      );
+      if (prev) {
+        prev.classList.remove("car-card-tag-selected");
+      }
+      cardTag.classList.add("car-card-tag-selected");
+      carAssignCardSelection = { cardNumber, areaId, carId: fromCarId };
+      return;
+    }
+    carAssignCardSelection = null;
+    const prevCard = elements.carAssignPanel.querySelector(
+      ".car-card-tag-selected"
+    );
+    if (prevCard) {
+      prevCard.classList.remove("car-card-tag-selected");
+    }
+    const moveList = [];
+    if (carAssignCardMultiSelection.length) {
+      carAssignCardMultiSelection.forEach((key) => {
+        const parts = key.split(":");
+        if (parts.length === 3) {
+          moveList.push({
+            areaId: parts[0],
+            cardNumber: parts[1],
+            fromCarId: parts[2]
+          });
+        }
+      });
+    } else if (selection.cardNumber && selection.areaId) {
+      moveList.push({
+        areaId: selection.areaId,
+        cardNumber: selection.cardNumber,
+        fromCarId: selection.carId || ""
+      });
+    }
+    if (!moveList.length || !toCarId) {
+      return;
+    }
+    const allCards = state.data.cards || [];
+    moveList.forEach((item) => {
+      if (!item.areaId || !item.cardNumber) return;
+      allCards.forEach((card) => {
+        if (
+          String(card["구역번호"] || "") === String(item.areaId) &&
+          String(card["카드번호"] || "") === String(item.cardNumber)
+        ) {
+          card["차량"] = String(toCarId);
+        }
+      });
+    });
+    carAssignCardMultiSelection = [];
+    const multiPrev = elements.carAssignPanel.querySelectorAll(
+      ".car-card-tag-multi"
+    );
+    multiPrev.forEach((el) => el.classList.remove("car-card-tag-multi"));
+    renderCards();
+    renderCarAssignPopup();
+    return;
+  }
+
+  if (carAssignCardSelection || carAssignCardMultiSelection.length) {
+    const selection = carAssignCardSelection || {};
+    carAssignCardSelection = null;
+    const prevCard = elements.carAssignPanel.querySelector(
+      ".car-card-tag-selected"
+    );
+    if (prevCard) {
+      prevCard.classList.remove("car-card-tag-selected");
+    }
+    const moveList = [];
+    if (carAssignCardMultiSelection.length) {
+      carAssignCardMultiSelection.forEach((key) => {
+        const parts = key.split(":");
+        if (parts.length === 3) {
+          moveList.push({
+            areaId: parts[0],
+            cardNumber: parts[1],
+            fromCarId: parts[2]
+          });
+        }
+      });
+    } else if (selection.cardNumber && selection.areaId) {
+      moveList.push({
+        areaId: selection.areaId,
+        cardNumber: selection.cardNumber,
+        fromCarId: selection.carId || ""
+      });
+    }
+    if (!moveList.length || !toCarId) {
+      return;
+    }
+    const allCards = state.data.cards || [];
+    moveList.forEach((item) => {
+      if (!item.areaId || !item.cardNumber) return;
+      allCards.forEach((card) => {
+        if (
+          String(card["구역번호"] || "") === String(item.areaId) &&
+          String(card["카드번호"] || "") === String(item.cardNumber)
+        ) {
+          card["차량"] = String(toCarId);
+        }
+      });
+    });
+    carAssignCardMultiSelection = [];
+    const multiPrev = elements.carAssignPanel.querySelectorAll(
+      ".car-card-tag-multi"
+    );
+    multiPrev.forEach((el) => el.classList.remove("car-card-tag-multi"));
+    renderCards();
+    renderCarAssignPopup();
+    return;
+  }
+
+  const member = event.target.closest(".car-member");
   if (!carAssignTapSelection) {
     if (!member) {
       return;
@@ -3690,28 +3940,21 @@ if (elements.carAssignAssignCards) {
       return;
     }
     const areas = state.data.areas || [];
-    let targetAreaIds = [];
-    if (state.selectedArea && state.selectedArea !== "all") {
-      targetAreaIds = [String(state.selectedArea)];
-    } else if (state.filterArea && state.filterArea !== "all") {
-      targetAreaIds = [String(state.filterArea)];
-    } else {
-      targetAreaIds = areas
-        .filter((row) => {
-          const start = row["시작날짜"];
-          const done = row["완료날짜"];
-          return start && !done;
-        })
-        .map((row) => String(row["구역번호"] || ""));
-      if (!targetAreaIds.length) {
-        const input = window.prompt(
-          "카드를 배정할 구역번호를 입력해 주세요."
-        );
-        if (!input) {
-          return;
-        }
-        targetAreaIds = [input.trim()];
+    let targetAreaIds = areas
+      .filter((row) => {
+        const start = row["시작날짜"];
+        const done = row["완료날짜"];
+        return start && !done;
+      })
+      .map((row) => String(row["구역번호"] || ""));
+    if (!targetAreaIds.length) {
+      const input = window.prompt(
+        "카드를 배정할 구역번호를 입력해 주세요."
+      );
+      if (!input) {
+        return;
       }
+      targetAreaIds = [input.trim()];
     }
     const allCards = state.data.cards || [];
     const areaCardsList = targetAreaIds.map((areaId) => ({
@@ -3741,45 +3984,25 @@ if (elements.carAssignAssignCards) {
     ) {
       return;
     }
-    setLoading(true, "구역카드 자동 배정 중...");
-    try {
-      let idx = 0;
-      for (const { areaId, cards } of areaCardsList) {
-        if (!cards.length) {
-          continue;
-        }
-        const pairs = [];
-        for (const card of cards) {
-          const car = cars[idx % cars.length];
-          idx += 1;
-          const cardNumber = String(card["카드번호"] || "");
-          if (!cardNumber) continue;
-          pairs.push({ cardNumber, carId: String(car.carId || "") });
-        }
-        if (!pairs.length) {
-          continue;
-        }
-        const res = await apiRequest("assignCardsToCars", {
-          areaId,
-          pairs: JSON.stringify(pairs)
-        });
-        if (!res.success) {
-          alert(res.message || "구역카드 배정에 실패했습니다.");
-          return;
-        }
-        state.data.cards = res.cards || state.data.cards;
+    let idx = 0;
+    for (const { areaId, cards } of areaCardsList) {
+      if (!cards.length) {
+        continue;
       }
-      renderAreas();
-      renderCards();
-      renderAdminPanel();
-      renderMyCarInfo();
-      setStatus("구역카드가 차량에 자동 배정되었습니다.");
-      renderCarAssignPopup();
-    } catch (e) {
-      alert("구역카드 배정 중 오류가 발생했습니다.");
-    } finally {
-      setLoading(false);
+      for (const card of cards) {
+        const car = cars[idx % cars.length];
+        idx += 1;
+        const cardNumber = String(card["카드번호"] || "");
+        if (!cardNumber) continue;
+        card["차량"] = String(car.carId || "");
+      }
     }
+    renderAreas();
+    renderCards();
+    renderAdminPanel();
+    renderMyCarInfo();
+    setStatus("구역카드가 차량에 자동 배정되었습니다.");
+    renderCarAssignPopup();
   });
 }
 
