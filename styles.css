@@ -293,6 +293,14 @@ main {
   font-weight: 700;
 }
 
+.area-state-chip {
+  font-size: 11px;
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: #e5e7eb;
+  color: #374151;
+}
+
 .area-inline-list .list-item button {
   margin-left: 8px;
   padding: 6px 10px;
@@ -371,11 +379,67 @@ button.secondary {
   box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.4);
 }
 
+.list-item.area-in-progress {
+  border-color: #f97316;
+}
+
+.list-item.area-in-progress.active {
+  border-color: #f97316;
+  background: #fffbeb;
+  box-shadow: 0 0 0 2px rgba(249, 115, 22, 0.4);
+}
+
 .status-badge {
   font-size: 13px;
   padding: 2px 6px;
   border-radius: 6px;
   background: #e2e8f0;
+}
+
+.status-badge-progress {
+  background: #ffffff;          /* 흰색 배경 */
+  color: #f97316;               /* 주황 글자 */
+  border: 1px solid #f97316;    /* 주황색 테두리 */
+  padding: 6px 10px;            /* 봉사 시작 버튼과 비슷한 높이/가로 */
+  border-radius: 8px;           /* 버튼과 동일한 모서리 둥글기 */
+  font-size: 12px;              /* 봉사 시작 버튼과 동일 폰트 크기 */
+}
+
+.assign-cards-btn {
+  border: 1px solid #1e3a8a;
+  background: #ffffff;
+  color: #111827;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 14px;
+  cursor: pointer;
+  margin-left: 4px;
+}
+
+.assign-cards-btn:hover,
+.assign-cards-btn:focus {
+  border-color: #1d4ed8;
+}
+
+.area-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  gap: 8px;
+}
+
+.area-header-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.area-header-right {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
 }
 
 .card-grid {
@@ -406,9 +470,10 @@ button.secondary {
   box-shadow: 0 0 0 1px rgba(249, 115, 22, 0.4);
 }
 
-.list-item.area-today {
-  border-color: #22c55e;
-  background: #dcfce7;
+.card.card-active-progress {
+  border-color: #f97316;
+  background: #fffbeb;
+  box-shadow: 0 0 0 2px rgba(249, 115, 22, 0.4);
 }
 
 .card-header {
@@ -478,6 +543,60 @@ button.secondary {
   margin-top: 8px;
 }
 
+.card-assign-box {
+  display: inline-flex;
+  align-items: center;
+  margin-left: auto;
+}
+
+.card-assign-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+
+.card-select {
+  width: 18px;
+  height: 18px;
+}
+
+.card-car-info {
+  font-size: 13px;
+}
+
+.car-select-list {
+  padding: 12px 16px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.car-select-btn {
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid #1e3a8a;
+  background: #ffffff;
+  color: #111827;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.car-select-btn:hover,
+.car-select-btn:focus {
+  border-color: #1d4ed8;
+  background: #eff6ff;
+}
+
+#car-select-overlay {
+  align-items: center;
+}
+
+#car-select-overlay .area-overlay-content {
+  max-width: 360px;
+  max-height: 70vh;
+  border-radius: 12px;
+}
 .nav-links a {
   font-size: 11px;
   padding: 4px 8px;
@@ -485,6 +604,18 @@ button.secondary {
   border: 1px solid #cbd2d9;
   background: #ffffff;
   text-decoration: none;
+  color: #1f2933;
+}
+
+.nav-links a.nav-kakao {
+  background: #ffffff;
+  border-color: #cbd2d9;
+  color: #1f2933;
+}
+
+.nav-links a.nav-naver {
+  background: #ffffff;
+  border-color: #cbd2d9;
   color: #1f2933;
 }
 
@@ -496,6 +627,11 @@ button.secondary {
 .list-item.area-today {
   border-color: #f97316;
   background: #ffedd5;
+}
+
+.list-item.area-today-complete {
+  border-color: #fed7aa;   /* 연한 주황 테두리 */
+  background: #fffbeb;     /* 아주 연한 주황 배경 */
 }
 
 .area-date-range {
@@ -872,8 +1008,8 @@ button.secondary {
 
 .car-assign-actions button {
   white-space: nowrap;
-  font-size: 14px;
-  padding: 6px 10px;
+  font-size: 13px;
+  padding: 4px 8px;
 }
 
 .car-assign-reset {
@@ -941,6 +1077,32 @@ button.secondary {
 .car-member.tap-selected {
   border-color: #1f6feb;
   box-shadow: 0 0 0 2px rgba(31, 111, 235, 0.5);
+}
+
+.car-card-list {
+  margin-top: 6px;
+  padding-top: 4px;
+  border-top: 1px dashed #e2e8f0;
+}
+
+.car-card-list-label {
+  font-size: 11px;
+  color: #6b7280;
+  margin-bottom: 2px;
+}
+
+.car-card-list-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+}
+
+.car-card-tag {
+  font-size: 11px;
+  padding: 2px 4px;
+  border-radius: 999px;
+  border: 1px solid #cbd2d9;
+  background: #f9fafb;
 }
 
 @media (max-width: 768px) {

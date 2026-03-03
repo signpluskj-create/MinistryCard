@@ -33,6 +33,7 @@ const state = {
   scrollToSelectedCard: false,
   participantsToday: [],
   carAssignments: [],
+  selectedCards: [],
   currentMenu: "cards"
 };
 
@@ -85,6 +86,10 @@ const elements = {
   carAssignAdd: document.getElementById("car-assign-add"),
   carAssignReset: document.getElementById("car-assign-reset"),
   carAssignSave: document.getElementById("car-assign-save"),
+  carAssignAssignCards: document.getElementById("car-assign-assign-cards"),
+  carSelectOverlay: document.getElementById("car-select-overlay"),
+  closeCarSelect: document.getElementById("close-car-select"),
+  carSelectList: document.getElementById("car-select-list"),
   adminPanel: document.getElementById("admin-panel"),
   completionList: document.getElementById("completion-list"),
   visitList: document.getElementById("visit-list"),
@@ -103,6 +108,52 @@ const elements = {
   adminCarEdit: document.getElementById("admin-car-edit"),
   adminEvAdd: document.getElementById("admin-ev-add"),
   adminEvDelete: document.getElementById("admin-ev-delete")
+};
+
+const openCarSelectPopup = (areaId, cardNumbers) => {
+  const cars = state.carAssignments || [];
+  if (!elements.carSelectOverlay || !elements.carSelectList || !cars.length) {
+    return;
+  }
+  elements.carSelectList.innerHTML = "";
+  cars.forEach((car) => {
+    const driverName = car.driver ? String(car.driver) : "";
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "car-select-btn";
+    btn.textContent = driverName
+      ? `차량 ${car.carId} (${driverName})`
+      : `차량 ${car.carId}`;
+    btn.addEventListener("click", async () => {
+      const pairs = cardNumbers.map((cardNumber) => ({
+        cardNumber: String(cardNumber),
+        carId: String(car.carId || "")
+      }));
+      setLoading(true, "카드 차량 배정 중...");
+      try {
+        const res = await apiRequest("assignCardsToCars", {
+          areaId,
+          pairs: JSON.stringify(pairs)
+        });
+        if (!res.success) {
+          alert(res.message || "카드 배정에 실패했습니다.");
+          return;
+        }
+        state.data.cards = res.cards || state.data.cards;
+        state.selectedCards = [];
+        renderAreas();
+        renderCards();
+        renderAdminPanel();
+        renderMyCarInfo();
+        setStatus("선택한 카드가 차량에 배정되었습니다.");
+        elements.carSelectOverlay.classList.add("hidden");
+      } finally {
+        setLoading(false);
+      }
+    });
+    elements.carSelectList.appendChild(btn);
+  });
+  elements.carSelectOverlay.classList.remove("hidden");
 };
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
@@ -259,7 +310,23 @@ const renderMyCarInfo = () => {
   if (passengers.length) {
     textParts.push(passengers.join(", "));
   }
-  box.textContent = textParts.join(" | ");
+  const cards = (state.data.cards || []).filter(
+    (card) => String(card["차량"] || "") === carId
+  );
+  const lines = [];
+  lines.push(textParts.join(" | "));
+  if (cards.length) {
+    const labels = cards
+      .slice()
+      .sort((a, b) => {
+        const numA = String(a["카드번호"] || "");
+        const numB = String(b["카드번호"] || "");
+        return numA.localeCompare(numB, "ko-KR");
+      })
+      .map((card) => String(card["카드번호"] || ""));
+    lines.push(`오늘 카드: ${labels.join(", ")}`);
+  }
+  box.innerHTML = lines.join("<br>");
   box.classList.remove("hidden");
   const defaultSize = 15;
   const minSize = 11;
@@ -637,9 +704,14 @@ const resetCarAssignmentsOnServer = async () => {
       alert(res.message || "차량 배정 초기화에 실패했습니다.");
       return;
     }
-    state.data.assignments = [];
+    state.data.assignments = res.assignments || [];
+    if (res.cards) {
+      state.data.cards = res.cards || state.data.cards;
+    }
     state.participantsToday = [];
     state.carAssignments = [];
+    renderAreas();
+    renderCards();
     renderAdminPanel();
     renderMyCarInfo();
   } finally {
@@ -660,6 +732,7 @@ const renderCarAssignmentsPanel = () => {
   const grid = document.createElement("div");
   grid.className = "car-assign-grid";
   const cars = state.carAssignments || [];
+  const allCards = state.data.cards || [];
   cars.forEach((car) => {
     const driverName = car.driver ? String(car.driver) : "";
     const col = document.createElement("div");
@@ -670,6 +743,35 @@ const renderCarAssignmentsPanel = () => {
     header.innerHTML = driverName
       ? `차량 ${car.carId}<br />(${driverName})`
       : `차량 ${car.carId}`;
+    header.addEventListener("dblclick", async () => {
+      let areaId = state.selectedArea || state.filterArea;
+      if (!areaId || areaId === "all") {
+        const input = window.prompt("배정할 구역번호를 입력해 주세요.");
+        if (!input) return;
+        areaId = input.trim();
+      }
+      const cardNumber = window.prompt("배정할 카드번호를 입력해 주세요.");
+      if (!cardNumber) return;
+      setLoading(true, "카드 수동 배정 중...");
+      try {
+        const res = await apiRequest("assignCardsToCars", {
+          areaId,
+          pairs: JSON.stringify([{ cardNumber: String(cardNumber), carId: String(car.carId || "") }])
+        });
+        if (!res.success) {
+          alert(res.message || "카드 배정에 실패했습니다.");
+          return;
+        }
+        state.data.cards = res.cards || state.data.cards;
+        renderAreas();
+        renderCards();
+        renderAdminPanel();
+        renderMyCarInfo();
+        setStatus(`카드 ${String(cardNumber)}가 차량 ${String(car.carId)}에 배정되었습니다.`);
+      } finally {
+        setLoading(false);
+      }
+    });
     const membersBox = document.createElement("div");
     membersBox.className = "car-members";
     membersBox.dataset.carId = car.carId;
@@ -682,6 +784,26 @@ const renderCarAssignmentsPanel = () => {
       item.textContent = name;
       membersBox.appendChild(item);
     });
+    const cardTagsBox = document.createElement("div");
+    cardTagsBox.className = "car-card-list";
+    const assignedCards = allCards.filter(
+      (card) => String(card["차량"] || "") === String(car.carId || "")
+    );
+    if (assignedCards.length) {
+      const label = document.createElement("div");
+      label.className = "car-card-list-label";
+      label.textContent = "배정된 카드";
+      cardTagsBox.appendChild(label);
+      const tagsRow = document.createElement("div");
+      tagsRow.className = "car-card-list-tags";
+      assignedCards.forEach((card) => {
+        const span = document.createElement("span");
+        span.className = "car-card-tag";
+        span.textContent = String(card["카드번호"] || "");
+        tagsRow.appendChild(span);
+      });
+      cardTagsBox.appendChild(tagsRow);
+    }
     let pressTimer = null;
     const clearPressTimer = () => {
       if (pressTimer) {
@@ -723,6 +845,7 @@ const renderCarAssignmentsPanel = () => {
       col.addEventListener(type, clearPressTimer);
     });
     col.append(header, membersBox);
+    col.appendChild(cardTagsBox);
     grid.appendChild(col);
   });
   panel.appendChild(grid);
@@ -848,15 +971,36 @@ const renderCarAssignPopup = () => {
 };
 
 const loadApiUrl = () => {
-  state.apiUrl = DEFAULT_API_URL;
+  let url = DEFAULT_API_URL;
+  try {
+    if (typeof window !== "undefined" && window.localStorage) {
+      const stored = window.localStorage.getItem("mc_api_url");
+      if (stored) {
+        url = stored;
+      }
+    }
+  } catch (e) {}
+  state.apiUrl = url;
   if (elements.apiUrlInput) {
-    elements.apiUrlInput.value = DEFAULT_API_URL;
+    elements.apiUrlInput.value = url;
   }
   elements.configPanel.classList.add("hidden");
 };
 
 const saveApiUrl = () => {
-  state.apiUrl = DEFAULT_API_URL;
+  let url = DEFAULT_API_URL;
+  if (elements.apiUrlInput) {
+    const value = elements.apiUrlInput.value.trim();
+    if (value) {
+      url = value;
+    }
+  }
+  state.apiUrl = url;
+  try {
+    if (typeof window !== "undefined" && window.localStorage) {
+      window.localStorage.setItem("mc_api_url", url);
+    }
+  } catch (e) {}
   elements.configPanel.classList.add("hidden");
 };
 
@@ -941,9 +1085,12 @@ const renderAreas = () => {
   allOption.textContent = "전체구역";
   elements.filterArea.appendChild(allOption);
   const today = todayISO();
+  const isLeader =
+    state.user &&
+    (state.user.role === "관리자" || state.user.role === "인도자");
   const areaIds = Object.keys(grouped);
   areaIds.forEach((areaId) => {
-    const createItem = () => {
+    const createItem = (withAssignButton) => {
       const item = document.createElement("div");
       item.className = "list-item";
       item.dataset.areaId = areaId;
@@ -967,7 +1114,8 @@ const renderAreas = () => {
       idSpan.className = "area-id";
       idSpan.textContent = `${areaId}`;
       title.appendChild(idSpan);
-      const isComplete = areaCompletionStatus(grouped[areaId]);
+      const cardsInArea = grouped[areaId];
+      const isComplete = areaCompletionStatus(cardsInArea);
       const hasStart = Boolean(startText);
       const hasDone = Boolean(doneText);
       const inProgress = hasStart && !hasDone;
@@ -988,22 +1136,78 @@ const renderAreas = () => {
         stateChip.textContent = isComplete ? "완료" : "시작";
         title.appendChild(stateChip);
       }
+      const headerRow = document.createElement("div");
+      headerRow.className = "area-header-row";
+      const leftBox = document.createElement("div");
+      leftBox.className = "area-header-left";
+      leftBox.appendChild(title);
+      const rightBox = document.createElement("div");
+      rightBox.className = "area-header-right";
       let badge = null;
       if (inProgress) {
         badge = document.createElement("span");
         badge.className = "status-badge status-badge-progress";
         badge.textContent = "진행중";
+        item.classList.add("area-in-progress");
       }
       if (isToday && inProgress) {
         item.classList.add("area-today");
       } else if (isToday && isComplete) {
         item.classList.add("area-today-complete");
       }
-      if (badge) {
-        item.append(title, badge);
-      } else {
-        item.append(title);
+      if (withAssignButton && inProgress && isLeader) {
+        const assignBtn = document.createElement("button");
+        assignBtn.type = "button";
+        assignBtn.textContent = "차량배정";
+        assignBtn.className = "assign-cards-btn";
+        assignBtn.addEventListener("click", (event) => {
+          event.stopPropagation();
+          if (!state.selectedArea || state.selectedArea !== areaId) {
+            alert("해당 구역의 카드를 먼저 펼쳐서 선택해 주세요.");
+            return;
+          }
+          const selected = state.selectedCards.slice();
+          if (!selected.length) {
+            alert("배정할 카드를 선택해 주세요.");
+            return;
+          }
+          const cars = state.carAssignments || [];
+          if (!cars.length) {
+            alert("먼저 차량 배정 패널에서 차량을 설정해 주세요.");
+            return;
+          }
+          openCarSelectPopup(areaId, selected);
+        });
+        rightBox.appendChild(assignBtn);
       }
+      const showStartButton =
+        withAssignButton &&
+        hasDone &&
+        state.user &&
+        (state.user.role === "인도자" || state.user.role === "관리자");
+      if (showStartButton) {
+        const startBtn = document.createElement("button");
+        startBtn.type = "button";
+        startBtn.textContent = "봉사 시작";
+        startBtn.className = "start-service-btn";
+        startBtn.addEventListener("click", (event) => {
+          event.stopPropagation();
+          state.expandedAreaId = areaId;
+          state.filterArea = areaId;
+          elements.filterArea.value = areaId;
+          selectArea(areaId);
+          startServiceForArea(areaId);
+          elements.areaOverlay.classList.add("hidden");
+          renderAreas();
+          renderCards();
+        });
+        rightBox.appendChild(startBtn);
+      }
+      if (badge) {
+        rightBox.appendChild(badge);
+      }
+      headerRow.append(leftBox, rightBox);
+      item.append(headerRow);
       item.addEventListener("click", (event) => {
         if (
           event.target.closest(".area-cards") ||
@@ -1030,36 +1234,9 @@ const renderAreas = () => {
       });
       return item;
     };
-    const createStartButton = () => {
-      const startBtn = document.createElement("button");
-      startBtn.type = "button";
-      startBtn.textContent = "봉사 시작";
-      startBtn.style.marginLeft = "auto";
-      startBtn.className = "start-service-btn";
-      startBtn.addEventListener("click", (event) => {
-        event.stopPropagation();
-        state.expandedAreaId = areaId;
-        state.filterArea = areaId;
-        elements.filterArea.value = areaId;
-        selectArea(areaId);
-        startServiceForArea(areaId);
-        elements.areaOverlay.classList.add("hidden");
-        renderAreas();
-        renderCards();
-      });
-      return startBtn;
-    };
-    const leftItem = createItem();
-    const overlayItem = createItem();
-    const inlineItem = createItem();
-    if (
-      areaCompletionStatus(grouped[areaId]) &&
-      state.user &&
-      (state.user.role === "인도자" || state.user.role === "관리자")
-    ) {
-      overlayItem.appendChild(createStartButton());
-      inlineItem.appendChild(createStartButton());
-    }
+    const leftItem = createItem(false);
+    const overlayItem = createItem(true);
+    const inlineItem = createItem(true);
     elements.areaList.appendChild(leftItem);
     elements.areaListOverlay.appendChild(overlayItem);
     elements.areaListInline.appendChild(inlineItem);
@@ -1085,13 +1262,22 @@ const renderCards = () => {
           (row) => String(row["구역번호"]) === String(state.selectedArea)
         )
       : null;
+  const today = todayISO();
   let startDate = null;
-  if (areaInfo && areaInfo["시작날짜"]) {
+  const isInProgress =
+    areaInfo && areaInfo["시작날짜"] && !areaInfo["완료날짜"];
+  if (isInProgress) {
     const parsed = parseVisitDate(areaInfo["시작날짜"]);
     if (parsed) {
       startDate = parsed;
     }
   }
+  const canAssignFromCardsPanel =
+    state.user &&
+    (state.user.role === "관리자" || state.user.role === "인도자") &&
+    areaInfo &&
+    areaInfo["시작날짜"] &&
+    !areaInfo["완료날짜"];
   let cards = rawCards.slice();
   const query = state.searchQuery.trim();
   const shouldHideAll =
@@ -1177,8 +1363,14 @@ const renderCards = () => {
   cards.forEach((card) => {
     const cardEl = document.createElement("div");
     cardEl.className = "card";
-    if (state.selectedCard && card["카드번호"] === state.selectedCard["카드번호"]) {
+    const isSelected =
+      state.selectedCard &&
+      card["카드번호"] === state.selectedCard["카드번호"];
+    if (isSelected) {
       cardEl.classList.add("active");
+      if (isInProgress) {
+        cardEl.classList.add("card-active-progress");
+      }
     }
     let unvisited = false;
     if (startDate) {
@@ -1270,11 +1462,13 @@ const renderCards = () => {
     const searchText = card["주소"] || "";
     const encoded = encodeURIComponent(searchText || card["카드번호"] || "");
     const kakao = document.createElement("a");
+    kakao.className = "nav-kakao";
     kakao.href = `https://map.kakao.com/link/search/${encoded}`;
     kakao.target = "_blank";
     kakao.rel = "noopener noreferrer";
     kakao.textContent = "카카오";
     const naver = document.createElement("a");
+    naver.className = "nav-naver";
     naver.href = `https://m.map.naver.com/search2/search.naver?query=${encoded}`;
     naver.target = "_blank";
     naver.rel = "noopener noreferrer";
@@ -1285,6 +1479,50 @@ const renderCards = () => {
     google.rel = "noopener noreferrer";
     google.textContent = "구글";
     nav.append(kakao, naver, google);
+    if (canAssignFromCardsPanel) {
+    const assignBox = document.createElement("span");
+    assignBox.className = "card-assign-box";
+    const label = document.createElement("label");
+    label.className = "card-assign-label";
+    const carId = String(card["차량"] || "");
+    if (carId) {
+      const rows = state.data.assignments || [];
+      const sameCar = rows.filter(
+        (row) => String(row["차량"] || "") === carId
+      );
+      const driverRow =
+        sameCar.find(
+          (row) => String(row["역할"] || "") === "운전자"
+        ) || null;
+      const driverName = driverRow ? String(driverRow["이름"] || "") : "";
+      const infoSpan = document.createElement("span");
+      infoSpan.className = "card-car-info";
+      infoSpan.textContent = driverName
+        ? `차량 ${carId} · ${driverName}`
+        : `차량 ${carId}`;
+      label.appendChild(infoSpan);
+    }
+    const check = document.createElement("input");
+    check.type = "checkbox";
+    check.className = "card-select";
+    check.dataset.cardNumber = String(card["카드번호"] || "");
+    check.checked = state.selectedCards.includes(
+      String(card["카드번호"] || "")
+    );
+    check.addEventListener("change", (e) => {
+      const id = String(card["카드번호"] || "");
+      const set = new Set(state.selectedCards);
+      if (e.target.checked) {
+        set.add(id);
+      } else {
+        set.delete(id);
+      }
+      state.selectedCards = Array.from(set);
+    });
+    label.appendChild(check);
+    assignBox.appendChild(label);
+    nav.appendChild(assignBox);
+    }
     cardEl.append(title, address, visitInfo);
     if (regular.textContent) {
       cardEl.appendChild(regular);
@@ -1359,7 +1597,12 @@ const renderCards = () => {
       cardEl.appendChild(elements.visitForm);
     }
     cardEl.addEventListener("click", (event) => {
-      if (event.target.closest("#visit-form")) {
+      if (
+        event.target.closest("#visit-form") ||
+        event.target.closest(".card-assign-label") ||
+        event.target.closest(".card-select") ||
+        event.target.closest(".card-assign-box")
+      ) {
         return;
       }
       if (
@@ -1665,11 +1908,13 @@ const renderAdminPanel = () => {
       cardTable.dataset.areaId = areaId;
       const cardThead = document.createElement("thead");
       const cardHeadRow = document.createElement("tr");
-      ["카드번호", "주소", "상세주소", "비고", "작업"].forEach((text) => {
-        const th = document.createElement("th");
-        th.textContent = text;
-        cardHeadRow.appendChild(th);
-      });
+      ["카드번호", "주소", "상세주소", "비고", "작업"].forEach(
+        (text) => {
+          const th = document.createElement("th");
+          th.textContent = text;
+          cardHeadRow.appendChild(th);
+        }
+      );
       cardThead.appendChild(cardHeadRow);
       const cardTbody = document.createElement("tbody");
       cards.forEach((card) => {
@@ -1759,7 +2004,13 @@ const renderAdminPanel = () => {
       newSaveBtn.textContent = "추가";
       newSaveBtn.dataset.cardAction = "create-card";
       newActionTd.appendChild(newSaveBtn);
-      newTr.append(newNoTd, newAddrTd, newDetailTd, newMemoTd, newActionTd);
+      newTr.append(
+        newNoTd,
+        newAddrTd,
+        newDetailTd,
+        newMemoTd,
+        newActionTd
+      );
       cardTbody.appendChild(newTr);
       cardTable.append(cardThead, cardTbody);
       cardsBox.appendChild(cardTable);
@@ -2129,6 +2380,7 @@ const renderAdminPanel = () => {
 const selectArea = (areaId) => {
   state.selectedArea = areaId;
   state.selectedCard = null;
+   state.selectedCards = [];
   elements.areaTitle.textContent = `구역 ${areaId}`;
   renderAreas();
   renderCards();
@@ -3429,6 +3681,113 @@ elements.carAssignAuto.addEventListener("click", () => {
   autoAssignCars();
   renderCarAssignPopup();
 });
+
+if (elements.carAssignAssignCards) {
+  elements.carAssignAssignCards.addEventListener("click", async () => {
+    const cars = state.carAssignments || [];
+    if (!cars.length) {
+      alert("먼저 차량을 배정해 주세요.");
+      return;
+    }
+    const areas = state.data.areas || [];
+    let targetAreaIds = [];
+    if (state.selectedArea && state.selectedArea !== "all") {
+      targetAreaIds = [String(state.selectedArea)];
+    } else if (state.filterArea && state.filterArea !== "all") {
+      targetAreaIds = [String(state.filterArea)];
+    } else {
+      targetAreaIds = areas
+        .filter((row) => {
+          const start = row["시작날짜"];
+          const done = row["완료날짜"];
+          return start && !done;
+        })
+        .map((row) => String(row["구역번호"] || ""));
+      if (!targetAreaIds.length) {
+        const input = window.prompt(
+          "카드를 배정할 구역번호를 입력해 주세요."
+        );
+        if (!input) {
+          return;
+        }
+        targetAreaIds = [input.trim()];
+      }
+    }
+    const allCards = state.data.cards || [];
+    const areaCardsList = targetAreaIds.map((areaId) => ({
+      areaId,
+      cards: allCards.filter((card) => {
+        const area = String(card["구역번호"] || "");
+        const carId = String(card["차량"] || "");
+        return area === String(areaId) && !carId;
+      })
+    }));
+    const totalCards = areaCardsList.reduce(
+      (sum, item) => sum + item.cards.length,
+      0
+    );
+    if (!totalCards) {
+      alert("선택된 구역에 해당하는 구역카드가 없습니다.");
+      return;
+    }
+    const areaLabel =
+      targetAreaIds.length === 1
+        ? `구역 ${targetAreaIds[0]}`
+        : `진행중 구역 ${targetAreaIds.join(", ")}`;
+    if (
+      !window.confirm(
+        `${areaLabel}의 구역카드 ${totalCards}장을 차량 ${cars.length}대에 자동 배정할까요?`
+      )
+    ) {
+      return;
+    }
+    setLoading(true, "구역카드 자동 배정 중...");
+    try {
+      let idx = 0;
+      for (const { areaId, cards } of areaCardsList) {
+        if (!cards.length) {
+          continue;
+        }
+        const pairs = [];
+        for (const card of cards) {
+          const car = cars[idx % cars.length];
+          idx += 1;
+          const cardNumber = String(card["카드번호"] || "");
+          if (!cardNumber) continue;
+          pairs.push({ cardNumber, carId: String(car.carId || "") });
+        }
+        if (!pairs.length) {
+          continue;
+        }
+        const res = await apiRequest("assignCardsToCars", {
+          areaId,
+          pairs: JSON.stringify(pairs)
+        });
+        if (!res.success) {
+          alert(res.message || "구역카드 배정에 실패했습니다.");
+          return;
+        }
+        state.data.cards = res.cards || state.data.cards;
+      }
+      renderAreas();
+      renderCards();
+      renderAdminPanel();
+      renderMyCarInfo();
+      setStatus("구역카드가 차량에 자동 배정되었습니다.");
+      renderCarAssignPopup();
+    } catch (e) {
+      alert("구역카드 배정 중 오류가 발생했습니다.");
+    } finally {
+      setLoading(false);
+    }
+  });
+}
+
+if (elements.closeCarSelect && elements.carSelectOverlay) {
+  elements.closeCarSelect.addEventListener("click", () => {
+    elements.carSelectOverlay.classList.add("hidden");
+  });
+}
 
 elements.carAssignSave.addEventListener("click", () => {
   saveCarAssignments();

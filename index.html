@@ -73,6 +73,7 @@
                   <button id="car-assign-auto" type="button">자동 배정</button>
                   <button id="car-assign-add" type="button">차량 추가</button>
                   <button id="car-assign-save" type="button">배정 저장</button>
+                  <button id="car-assign-assign-cards" type="button">카드 배정</button>
                   <button id="car-assign-reset" type="button" class="car-assign-reset">초기화</button>
                 </div>
                 <div id="car-assign-meta" class="car-assign-meta"></div>
@@ -80,6 +81,15 @@
                 <div id="car-assign-panel" class="car-assign-panel"></div>
               </div>
             </div>
+          </div>
+        </div>
+        <div id="car-select-overlay" class="area-overlay hidden">
+          <div class="area-overlay-content">
+            <div class="area-overlay-header">
+              <span>어느 차량에 배정할까요?</span>
+              <button id="close-car-select" class="icon-button" type="button">✕</button>
+            </div>
+            <div id="car-select-list" class="car-select-list"></div>
           </div>
         </div>
         <div id="admin-overlay" class="area-overlay hidden">
