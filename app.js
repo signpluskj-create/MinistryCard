@@ -716,6 +716,8 @@ const saveCarAssignments = async () => {
     renderCards();
     renderAdminPanel();
     renderMyCarInfo();
+    setStatus("차량 배정이 저장되었습니다.");
+    renderCarAssignPopup();
   } finally {
     setLoading(false);
   }
@@ -1046,7 +1048,7 @@ const renderCarAssignPopup = () => {
         ? `배정된 날짜: ${dateText}`
         : "오늘 차량 배정이 저장되어 있습니다.";
     } else {
-      meta.textContent = "저장된 차량 배정이 없습니다.";
+      meta.textContent = "아직 저장된 차량 배정이 없습니다. 배정 후 저장해 주세요.";
     }
   }
   renderSelectedParticipants();
