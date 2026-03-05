@@ -4109,7 +4109,12 @@ if (elements.carAssignAssignCards) {
           !isSixMonths &&
           !isBanned
         );
-      })
+      }).sort((a, b) =>
+        String(a["카드번호"] || "").localeCompare(
+          String(b["카드번호"] || ""),
+          "ko-KR"
+        )
+      )
     }));
     const totalCards = areaCardsList.reduce(
       (sum, item) => sum + item.cards.length,
@@ -4130,11 +4135,11 @@ if (elements.carAssignAssignCards) {
     ) {
       return;
     }
-    let idx = 0;
     for (const { areaId, cards } of areaCardsList) {
       if (!cards.length) {
         continue;
       }
+      let idx = 0;
       for (const card of cards) {
         const car = cars[idx % cars.length];
         idx += 1;
