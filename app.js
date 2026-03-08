@@ -50,10 +50,10 @@ const elements = {
   menuToggle: document.getElementById("menu-toggle"),
   menuClose: document.getElementById("menu-close"),
   sideMenu: document.getElementById("side-menu"),
+  appTitle: document.getElementById("app-title"),
   nameInput: document.getElementById("name-input"),
   passwordInput: document.getElementById("password-input"),
   loginButton: document.getElementById("login-button"),
-  refreshButton: document.getElementById("refresh-button"),
   apiUrlInput: document.getElementById("api-url-input"),
   saveApiUrl: document.getElementById("save-api-url"),
   userInfo: document.getElementById("user-info"),
@@ -228,6 +228,28 @@ const getVisitDateValue = (row) =>
   "";
 
 const getVisitCardNumber = (row) => row["카드번호"] || row["구역카드"] || "";
+
+const getCardTownLabel = (card) => {
+  const direct = String(card["읍면동"] || "").trim();
+  if (direct) {
+    return direct;
+  }
+  const areaId = String(card["구역번호"] || "").trim();
+  if (!areaId) {
+    return "";
+  }
+  const areaRow =
+    (state.data.areas || []).find((row) => {
+      const raw = String(row["구역번호"] || "").trim();
+      return raw === areaId || raw.startsWith(areaId + " ");
+    }) || null;
+  if (!areaRow) {
+    return "";
+  }
+  const rawLabel = String(areaRow["구역번호"] || "");
+  const m = rawLabel.match(/\((.+)\)/);
+  return m ? m[1].trim() : "";
+};
 
 const parseVisitDate = (value) => {
   if (!value) {
@@ -836,8 +858,10 @@ const renderCarAssignmentsPanel = () => {
         const span = document.createElement("span");
         span.className = "car-card-tag";
         const cardNumber = String(card["카드번호"] || "");
+        const townText = getCardTownLabel(card);
+        const tagLabel = townText ? `${cardNumber} (${townText})` : cardNumber;
         const areaId = String(card["구역번호"] || "");
-        span.textContent = cardNumber;
+        span.textContent = tagLabel;
         span.dataset.cardNumber = cardNumber;
         span.dataset.areaId = areaId;
         span.dataset.carId = String(car.carId || "");
@@ -1204,6 +1228,18 @@ const renderAreas = () => {
   const isLeader =
     state.user &&
     (state.user.role === "관리자" || state.user.role === "인도자");
+  const areasRows = state.data.areas || [];
+  let latestCompleteAreaId = null;
+  let latestCompleteDate = null;
+  areasRows.forEach((row) => {
+    const d = row["완료날짜"] ? parseVisitDate(row["완료날짜"]) : null;
+    if (d && !Number.isNaN(d.getTime())) {
+      if (!latestCompleteDate || d.getTime() > latestCompleteDate.getTime()) {
+        latestCompleteDate = d;
+        latestCompleteAreaId = String(row["구역번호"] || "");
+      }
+    }
+  });
   const areaIds = Object.keys(grouped);
   areaIds.forEach((areaId) => {
     const createItem = (withAssignButton) => {
@@ -1224,12 +1260,17 @@ const renderAreas = () => {
         areaInfo && areaInfo["완료날짜"]
           ? formatDate(areaInfo["완료날짜"])
           : "";
-      const title = document.createElement("span");
+      const title = document.createElement("div");
       title.className = "area-title";
+      const mainRow = document.createElement("div");
+      mainRow.className = "area-title-main";
       const idSpan = document.createElement("span");
       idSpan.className = "area-id";
       idSpan.textContent = `${areaId}`;
-      title.appendChild(idSpan);
+      mainRow.appendChild(idSpan);
+      title.appendChild(mainRow);
+      const metaRow = document.createElement("div");
+      metaRow.className = "area-meta-row";
       const cardsInArea = grouped[areaId];
       const isComplete = areaCompletionStatus(cardsInArea);
       const hasStart = Boolean(startText);
@@ -1247,17 +1288,24 @@ const renderAreas = () => {
         startText &&
         startText >= inviteInfo.startDate;
       const range = isComplete ? doneText || startText : startText || doneText;
-      if (range) {
+      if (isComplete || inProgress) {
+        const labelParts = [];
+        if (range) {
+          labelParts.push(range);
+        }
+        labelParts.push(isComplete ? "완료" : "시작");
+        const stateChip = document.createElement("span");
+        stateChip.className = "area-date-range";
+        stateChip.textContent = labelParts.join(" ");
+        metaRow.appendChild(stateChip);
+      } else if (range) {
         const dateSpan = document.createElement("span");
         dateSpan.className = "area-date-range";
         dateSpan.textContent = range;
-        title.appendChild(dateSpan);
+        metaRow.appendChild(dateSpan);
       }
-      if (isComplete || inProgress) {
-        const stateChip = document.createElement("span");
-        stateChip.className = "area-state-chip";
-        stateChip.textContent = isComplete ? "완료" : "시작";
-        title.appendChild(stateChip);
+      if (metaRow.childNodes.length) {
+        title.appendChild(metaRow);
       }
       const headerRow = document.createElement("div");
       headerRow.className = "area-header-row";
@@ -1342,6 +1390,12 @@ const renderAreas = () => {
         item.classList.add("area-today");
       } else if (isToday && isComplete) {
         item.classList.add("area-today-complete");
+      } else if (
+        isComplete &&
+        latestCompleteAreaId &&
+        String(latestCompleteAreaId) === String(areaId)
+      ) {
+        item.classList.add("area-last-complete");
       }
       if (withAssignButton && inProgress && isLeader) {
         const assignBtn = document.createElement("button");
@@ -1680,7 +1734,11 @@ const renderCards = () => {
     const title = document.createElement("div");
     title.className = "card-header";
     const mainTitle = document.createElement("strong");
-    mainTitle.textContent = card["카드번호"] || "";
+  const cardNumText = String(card["카드번호"] || "");
+  const townText = getCardTownLabel(card);
+  mainTitle.textContent = townText
+    ? `${cardNumText} (${townText})`
+    : cardNumText;
     const badgeRow = document.createElement("div");
     badgeRow.className = "card-badges";
     if (card["방문금지"]) {
@@ -2816,6 +2874,32 @@ const loadData = async () => {
   }
 };
 
+const enterDashboard = async (user) => {
+  state.user = user;
+  elements.userInfo.textContent = `${state.user.name} (${state.user.role})`;
+  if (state.user.role === "관리자" || state.user.role === "인도자") {
+    elements.menuToggle.style.display = "inline-block";
+  } else {
+    elements.menuToggle.style.display = "none";
+  }
+  elements.loginPanel.classList.add("hidden");
+  elements.dashboard.classList.remove("hidden");
+  await loadData();
+  if (!state.expandedAreaId && state.filterArea === "all") {
+    const inProgressAreaId = getFirstInProgressArea();
+    if (inProgressAreaId) {
+      state.expandedAreaId = inProgressAreaId;
+      state.filterArea = inProgressAreaId;
+      state.selectedArea = inProgressAreaId;
+    }
+  }
+  renderAreas();
+  renderCards();
+  ensureAssignmentState();
+  renderAdminPanel();
+  renderMyCarInfo();
+};
+
 const login = async () => {
   const name = elements.nameInput.value.trim();
   const password = elements.passwordInput.value.trim();
@@ -2830,29 +2914,14 @@ const login = async () => {
       alert(res.message || "로그인 실패");
       return;
     }
-    state.user = { role: res.role, name: res.name };
-    elements.userInfo.textContent = `${state.user.name} (${state.user.role})`;
-    if (state.user.role === "관리자" || state.user.role === "인도자") {
-      elements.menuToggle.style.display = "inline-block";
-    } else {
-      elements.menuToggle.style.display = "none";
-    }
-    elements.loginPanel.classList.add("hidden");
-    elements.dashboard.classList.remove("hidden");
-    await loadData();
-    if (!state.expandedAreaId && state.filterArea === "all") {
-      const inProgressAreaId = getFirstInProgressArea();
-      if (inProgressAreaId) {
-        state.expandedAreaId = inProgressAreaId;
-        state.filterArea = inProgressAreaId;
-        state.selectedArea = inProgressAreaId;
-      }
-    }
-    renderAreas();
-    renderCards();
-    ensureAssignmentState();
-    renderAdminPanel();
-    renderMyCarInfo();
+    const user = { role: res.role, name: res.name };
+    try {
+      window.localStorage.setItem(
+        "mcUser",
+        JSON.stringify({ name: user.name, role: user.role })
+      );
+    } catch (e) {}
+    await enterDashboard(user);
   } finally {
     setLoading(false);
   }
@@ -3003,8 +3072,8 @@ const saveVisit = async (event) => {
 
 elements.saveApiUrl.addEventListener("click", saveApiUrl);
 elements.loginButton.addEventListener("click", login);
-if (elements.refreshButton) {
-  elements.refreshButton.addEventListener("click", () => {
+if (elements.appTitle) {
+  elements.appTitle.addEventListener("click", () => {
     if (!state.user) {
       return;
     }
@@ -3046,6 +3115,19 @@ elements.filterVisit.addEventListener("change", () => {
   renderCards();
 });
 elements.visitForm.addEventListener("submit", saveVisit);
+
+if (elements.userInfo) {
+  elements.userInfo.addEventListener("click", () => {
+    if (!state.user) {
+      return;
+    }
+    const ok = window.confirm("로그아웃 하시겠습니까?");
+    if (!ok) {
+      return;
+    }
+    logout();
+  });
+}
 
 if (elements.carAssignSelected) {
   elements.carAssignSelected.addEventListener("click", (event) => {
@@ -3106,6 +3188,35 @@ if (elements.carAssignSelected) {
     renderCarAssignPopup();
   });
 }
+
+const tryAutoLogin = async () => {
+  try {
+    const raw = window.localStorage.getItem("mcUser");
+    if (!raw) {
+      return;
+    }
+    const data = JSON.parse(raw);
+    if (!data || !data.name || !data.role) {
+      return;
+    }
+    await enterDashboard({ name: data.name, role: data.role });
+  } catch (e) {}
+};
+
+const logout = () => {
+  state.user = null;
+  try {
+    window.localStorage.removeItem("mcUser");
+  } catch (e) {}
+  elements.userInfo.textContent = "";
+  elements.menuToggle.style.display = "none";
+  elements.dashboard.classList.add("hidden");
+  elements.loginPanel.classList.remove("hidden");
+  elements.nameInput.value = "";
+  elements.passwordInput.value = "";
+};
+
+tryAutoLogin();
 
 if (elements.visitClearRevisit) {
   elements.visitClearRevisit.addEventListener("click", async () => {

@@ -62,6 +62,7 @@ body {
 .user-info {
   font-size: 14px;
   white-space: nowrap;
+  cursor: pointer;
 }
 
 .car-info {
@@ -358,10 +359,24 @@ main {
 }
 
 .area-title {
-  display: inline-flex;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  font-weight: 700;
+}
+
+.area-title-main {
+  display: flex;
   align-items: center;
   gap: 6px;
-  font-weight: 700;
+}
+
+.area-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
 }
 
 .area-state-chip {
@@ -705,6 +720,10 @@ button.secondary {
 .list-item.area-today-complete {
   border-color: #fed7aa;   /* 연한 주황 테두리 */
   background: #fffbeb;     /* 아주 연한 주황 배경 */
+}
+
+.list-item.area-last-complete {
+  border-color: #f97316;
 }
 
 .area-date-range {
@@ -1165,7 +1184,7 @@ button.secondary {
 }
 
 .car-card-list-label {
-  font-size: 11px;
+  font-size: 13px;
   color: #6b7280;
   margin-bottom: 2px;
 }
@@ -1177,8 +1196,8 @@ button.secondary {
 }
 
 .car-card-tag {
-  font-size: 11px;
-  padding: 2px 4px;
+  font-size: 13px;
+  padding: 3px 8px;
   border-radius: 999px;
   border: 1px solid #cbd2d9;
   background: #f9fafb;
