@@ -1229,14 +1229,12 @@ const renderAreas = () => {
     state.user &&
     (state.user.role === "관리자" || state.user.role === "인도자");
   const areasRows = state.data.areas || [];
-  let latestCompleteAreaId = null;
   let latestCompleteDate = null;
   areasRows.forEach((row) => {
     const d = row["완료날짜"] ? parseVisitDate(row["완료날짜"]) : null;
     if (d && !Number.isNaN(d.getTime())) {
       if (!latestCompleteDate || d.getTime() > latestCompleteDate.getTime()) {
         latestCompleteDate = d;
-        latestCompleteAreaId = String(row["구역번호"] || "");
       }
     }
   });
@@ -1276,6 +1274,10 @@ const renderAreas = () => {
       const hasStart = Boolean(startText);
       const hasDone = Boolean(doneText);
       const inProgress = hasStart && !hasDone;
+      const areaCompleteDate =
+        areaInfo && areaInfo["완료날짜"]
+          ? parseVisitDate(areaInfo["완료날짜"])
+          : null;
       const isToday =
         areaInfo && areaInfo["시작날짜"]
           ? isSameDay(areaInfo["시작날짜"], today)
@@ -1392,8 +1394,9 @@ const renderAreas = () => {
         item.classList.add("area-today-complete");
       } else if (
         isComplete &&
-        latestCompleteAreaId &&
-        String(latestCompleteAreaId) === String(areaId)
+        latestCompleteDate &&
+        areaCompleteDate &&
+        areaCompleteDate.getTime() === latestCompleteDate.getTime()
       ) {
         item.classList.add("area-last-complete");
       }
