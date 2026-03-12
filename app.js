@@ -110,6 +110,7 @@ const elements = {
   loadingText: document.getElementById("loading-text"),
   adminCardAdd: document.getElementById("admin-card-add"),
   adminCardDelete: document.getElementById("admin-card-delete"),
+  adminCardDeleted: document.getElementById("admin-card-deleted"),
   adminCarEdit: document.getElementById("admin-car-edit"),
   adminEvAdd: document.getElementById("admin-ev-add"),
   adminEvDelete: document.getElementById("admin-ev-delete"),
@@ -2010,6 +2011,66 @@ const renderCards = () => {
       cardEl.appendChild(info);
     }
     cardEl.appendChild(nav);
+    if (state.user && state.user.role === "관리자") {
+      let deletePressTimer = null;
+      const clearDeletePress = () => {
+        if (deletePressTimer) {
+          clearTimeout(deletePressTimer);
+          deletePressTimer = null;
+        }
+      };
+      const startDeletePress = () => {
+        clearDeletePress();
+        deletePressTimer = setTimeout(async () => {
+          deletePressTimer = null;
+          const areaId = String(card["구역번호"] || "");
+          const cardNumber = String(card["카드번호"] || "");
+          if (
+            !areaId ||
+            !cardNumber ||
+            !window.confirm(
+              `구역 ${areaId}, 카드 ${cardNumber}를 삭제하고 삭제 시트로 이동할까요?`
+            )
+          ) {
+            return;
+          }
+          try {
+            setLoading(true, "카드를 삭제하는 중...");
+            const res = await apiRequest("deleteCard", {
+              areaId,
+              cardNumber
+            });
+            if (!res.success) {
+              alert(res.message || "구역카드 삭제에 실패했습니다.");
+              return;
+            }
+            state.data.cards = res.cards || [];
+            renderAreas();
+            renderCards();
+            renderAdminPanel();
+            setStatus("구역카드가 삭제되었습니다.");
+          } catch (e) {
+            alert("구역카드 삭제 중 오류가 발생했습니다.");
+          } finally {
+            setLoading(false);
+          }
+        }, 800);
+      };
+      title.addEventListener("mousedown", (event) => {
+        if (event.button !== 0) {
+          return;
+        }
+        event.stopPropagation();
+        startDeletePress();
+      });
+      title.addEventListener("touchstart", (event) => {
+        event.stopPropagation();
+        startDeletePress();
+      });
+      ["mouseup", "mouseleave", "touchend", "touchcancel"].forEach((type) => {
+        title.addEventListener(type, clearDeletePress);
+      });
+    }
     if (state.selectedCard && card["카드번호"] === state.selectedCard["카드번호"]) {
       const oneYearAgo = new Date();
       oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
@@ -4153,6 +4214,21 @@ if (elements.adminCardDelete) {
       setStatus("구역카드가 삭제되었습니다.");
     } catch (e) {
       alert("구역카드 삭제 중 오류가 발생했습니다.");
+    }
+  });
+}
+
+if (elements.adminCardDeleted) {
+  elements.adminCardDeleted.addEventListener("click", async () => {
+    try {
+      const res = await apiRequest("bootstrap", {}, "GET");
+      if (res.error) {
+        alert(res.error || "삭제 카드 목록을 불러오지 못했습니다.");
+        return;
+      }
+      const deletedSheet = await apiRequest("deletedCards", {}, "GET");
+    } catch (e) {
+      alert("삭제 카드 목록을 불러오는 중 오류가 발생했습니다.");
     }
   });
 }
