@@ -494,8 +494,8 @@ button.secondary {
 
 .assign-cards-btn {
   border: 1px solid #1d4ed8;
-  background: #ffffff;
-  color: #111827;
+  background: #eff6ff; /* 더 연한 파란색 */
+  color: #1d4ed8;
   padding: 8px 12px;
   border-radius: 8px;
   font-size: 14px;
