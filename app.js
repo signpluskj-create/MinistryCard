@@ -1518,7 +1518,11 @@ const renderAreas = () => {
       ) {
         item.classList.add("area-last-complete");
       }
-      if (withAssignButton && inProgress && isLeader && !isKsl) {
+      if (
+        withAssignButton &&
+        isLeader &&
+        ((inProgress && !isKsl) || isKsl)
+      ) {
         const assignBtn = document.createElement("button");
         assignBtn.type = "button";
         assignBtn.textContent = "차량배정";
