@@ -1528,7 +1528,7 @@ const renderAreas = () => {
       ) {
         const assignBtn = document.createElement("button");
         assignBtn.type = "button";
-        assignBtn.textContent = "차량배정";
+        assignBtn.textContent = "차량 배정";
         assignBtn.className = "assign-cards-btn";
         let assignPressTimer = null;
         let assignLongPress = false;
