@@ -12,7 +12,8 @@ const state = {
     completions: [],
     visits: [],
     evangelists: [],
-    assignments: []
+    assignments: [],
+    deletedCards: []
   },
   selectedArea: null,
   selectedCard: null,
@@ -101,6 +102,7 @@ const elements = {
   evangelistList: document.getElementById("evangelist-list"),
   carAssignPanel: document.getElementById("car-assign-panel"),
   bannedCardList: document.getElementById("banned-card-list"),
+  deletedCardList: document.getElementById("deleted-card-list"),
   searchInput: document.getElementById("search-input"),
   searchButton: document.getElementById("search-button"),
   filterArea: document.getElementById("filter-area"),
@@ -1660,14 +1662,15 @@ const renderAreas = () => {
           state.filterArea = "all";
           elements.filterArea.value = "all";
           state.selectedArea = null;
+          state.scrollAreaToTop = false;
+          renderAreas();
+          renderCards();
         } else {
           state.expandedAreaId = areaId;
           state.filterArea = areaId;
           elements.filterArea.value = areaId;
           selectArea(areaId);
         }
-        renderAreas();
-        renderCards();
       });
       return item;
     };
@@ -2044,7 +2047,7 @@ const renderCards = () => {
               alert(res.message || "구역카드 삭제에 실패했습니다.");
               return;
             }
-            state.data.cards = res.cards || [];
+            await loadData();
             renderAreas();
             renderCards();
             renderAdminPanel();
@@ -2221,7 +2224,14 @@ const renderCards = () => {
     }
     container.appendChild(elements.cardList);
     if (state.scrollAreaToTop && !state.scrollToSelectedCard) {
-      expanded.scrollIntoView({ behavior: "smooth", block: "start" });
+      const scrollTarget = expanded;
+      const scrollOptions = { behavior: "smooth", block: "start" };
+      scrollTarget.scrollIntoView(scrollOptions);
+      if (typeof window !== "undefined" && window.requestAnimationFrame) {
+        window.requestAnimationFrame(() => {
+          scrollTarget.scrollIntoView(scrollOptions);
+        });
+      }
     }
   } else {
     elements.cardListHome.appendChild(elements.cardList);
@@ -2438,7 +2448,9 @@ const renderAdminPanel = () => {
     state.user.role === "관리자" || state.user.role === "인도자";
   if (
     !showAdmin ||
-    !["admin-cards", "admin-ev", "admin-banned"].includes(state.currentMenu)
+    !["admin-cards", "admin-ev", "admin-banned", "admin-deleted"].includes(
+      state.currentMenu
+    )
   ) {
     elements.adminPanel.classList.add("hidden");
     return;
@@ -2453,6 +2465,8 @@ const renderAdminPanel = () => {
       overlayTitleEl.textContent = "전도인 명단 관리";
     } else if (state.currentMenu === "admin-banned") {
       overlayTitleEl.textContent = "방문금지 관리";
+    } else if (state.currentMenu === "admin-deleted") {
+      overlayTitleEl.textContent = "삭제 카드";
     } else {
       overlayTitleEl.textContent = "";
     }
@@ -2615,14 +2629,17 @@ const renderAdminPanel = () => {
 
   const adminSections =
     elements.adminPanel.querySelectorAll(".admin-grid > div");
-  if (adminSections.length === 3) {
-    const [cardsSection, evSection, bannedSection] = adminSections;
+  if (adminSections.length === 4) {
+    const [cardsSection, evSection, bannedSection, deletedSection] =
+      adminSections;
     cardsSection.style.display =
       state.currentMenu === "admin-cards" ? "" : "none";
     evSection.style.display =
       state.currentMenu === "admin-ev" ? "" : "none";
     bannedSection.style.display =
       state.currentMenu === "admin-banned" ? "" : "none";
+    deletedSection.style.display =
+      state.currentMenu === "admin-deleted" ? "" : "none";
   }
 
   // 전도인 명단 관리: 표 형식 편집 (차량 정보 포함)
@@ -2812,6 +2829,171 @@ const renderAdminPanel = () => {
     }
     bannedByArea[areaId].push(card);
   });
+
+  // 삭제 카드 목록
+  const deleted = state.data.deletedCards || [];
+  const deletedByArea = {};
+  deleted.forEach((row) => {
+    const areaId = String(row["구역번호"] || "");
+    const cardNo = String(row["카드번호"] || "");
+    if (!areaId || !cardNo) {
+      return;
+    }
+    if (!deletedByArea[areaId]) {
+      deletedByArea[areaId] = [];
+    }
+    deletedByArea[areaId].push(row);
+  });
+  const deletedAreaIds = Object.keys(deletedByArea).sort((a, b) =>
+    String(a).localeCompare(String(b), "ko-KR")
+  );
+  elements.deletedCardList.innerHTML = "";
+  if (!deletedAreaIds.length) {
+    const empty = document.createElement("div");
+    empty.className = "list-item";
+    empty.textContent = "삭제된 카드가 없습니다.";
+    elements.deletedCardList.appendChild(empty);
+  } else {
+    deletedAreaIds.forEach((areaId) => {
+      const list = deletedByArea[areaId] || [];
+      const section = document.createElement("div");
+      section.className = "list-item";
+      section.dataset.areaId = areaId;
+      const header = document.createElement("div");
+      header.className = "card-header";
+      const title = document.createElement("strong");
+      title.textContent = `${areaId} · 카드 ${list.length}장`;
+      header.appendChild(title);
+      section.appendChild(header);
+      const box = document.createElement("div");
+      box.className = "deleted-card-box";
+      list.forEach((card) => {
+        const cardEl = document.createElement("div");
+        cardEl.className = "card";
+        const cardNo = String(card["카드번호"] || "");
+        cardEl.dataset.areaId = areaId;
+        cardEl.dataset.cardNumber = cardNo;
+        const headerRow = document.createElement("div");
+        headerRow.className = "card-header";
+        const mainTitle = document.createElement("strong");
+        const cardNumText = String(card["카드번호"] || "");
+        const townText = getCardTownLabel(card);
+        mainTitle.textContent = townText
+          ? `${cardNumText} (${townText})`
+          : cardNumText;
+        const badgeRow = document.createElement("div");
+        badgeRow.className = "card-badges";
+        const restoreBtn = document.createElement("button");
+        restoreBtn.type = "button";
+        restoreBtn.textContent = "복원";
+        restoreBtn.className = "status-badge";
+        restoreBtn.dataset.areaId = areaId;
+        restoreBtn.dataset.cardNumber = cardNo;
+        restoreBtn.dataset.action = "restore-deleted";
+        const purgeBtn = document.createElement("button");
+        purgeBtn.type = "button";
+        purgeBtn.textContent = "삭제";
+        purgeBtn.className = "status-badge";
+        purgeBtn.dataset.areaId = areaId;
+        purgeBtn.dataset.cardNumber = cardNo;
+        purgeBtn.dataset.action = "purge-deleted";
+        badgeRow.appendChild(restoreBtn);
+        badgeRow.appendChild(purgeBtn);
+        headerRow.append(mainTitle, badgeRow);
+        const address = document.createElement("div");
+        address.className = "card-line";
+        const addrText = [card["주소"], card["상세주소"]]
+          .filter(Boolean)
+          .join(" ");
+        address.textContent = addrText;
+
+        const visitInfo = document.createElement("div");
+        visitInfo.className = "card-line";
+        visitInfo.textContent = card["최근방문일"]
+          ? `최근방문: ${formatDate(card["최근방문일"])}`
+          : "최근방문 없음";
+        const info = document.createElement("div");
+        info.className = "card-line";
+        const memoText = String(
+          card["삭제정보"] || card["정보"] || card["비고"] || ""
+        );
+        if (memoText) {
+          info.textContent = `정보: ${memoText}`;
+        }
+        const historyBox = document.createElement("div");
+        historyBox.className = "card-history deleted-card-history";
+        historyBox.style.display = "none";
+        cardEl.append(headerRow, address, visitInfo);
+        if (info.textContent) {
+          cardEl.appendChild(info);
+        }
+        cardEl.appendChild(historyBox);
+        cardEl.addEventListener("click", (event) => {
+          if (event.target.closest("button")) {
+            return;
+          }
+          const areaIdText = cardEl.dataset.areaId || "";
+          const cardNumberText = cardEl.dataset.cardNumber || "";
+          if (!areaIdText || !cardNumberText) {
+            return;
+          }
+          const visible = historyBox.style.display !== "none";
+          if (visible) {
+            historyBox.style.display = "none";
+            historyBox.innerHTML = "";
+            return;
+          }
+          const visits = (state.data.visits || []).filter((v) => {
+            const ra = String(v["구역번호"] || v["areaId"] || "");
+            const rc = String(
+              v["카드번호"] || v["구역카드"] || v["cardNumber"] || ""
+            );
+            return (
+              ra === String(areaIdText) && rc === String(cardNumberText)
+            );
+          });
+          historyBox.innerHTML = "";
+          if (!visits.length) {
+            const empty = document.createElement("div");
+            empty.className = "card-history-empty";
+            empty.textContent = "방문내역 없음";
+            historyBox.appendChild(empty);
+          } else {
+            const sorted = visits
+              .map((row, index) => ({ row, index }))
+              .sort((a, b) => {
+                const db = parseVisitDate(getVisitDateValue(b.row));
+                const da = parseVisitDate(getVisitDateValue(a.row));
+                const tb = db ? db.getTime() : 0;
+                const ta = da ? da.getTime() : 0;
+                if (tb !== ta) {
+                  return tb - ta;
+                }
+                return b.index - a.index;
+              })
+              .map((x) => x.row);
+            sorted.forEach((row) => {
+              const resultText = row["결과"] || row["방문결과"] || "";
+              const workerText = row["전도인"] || row["방문자"] || "";
+              const memo = row["메모"] || row["비고"] || "";
+              const item = document.createElement("div");
+              item.className = "card-history-item";
+              item.textContent = `${formatDate(
+                getVisitDateValue(row)
+              )} · ${workerText} · ${resultText}${
+                memo ? " · " + memo : ""
+              }`;
+              historyBox.appendChild(item);
+            });
+          }
+          historyBox.style.display = "block";
+        });
+        box.appendChild(cardEl);
+      });
+      section.appendChild(box);
+      elements.deletedCardList.appendChild(section);
+    });
+  }
   const bannedAreaIds = Object.keys(bannedByArea).sort((a, b) => {
     const na = Number(a);
     const nb = Number(b);
@@ -3065,6 +3247,7 @@ const loadData = async () => {
     state.data.evangelists = data.evangelists || [];
     state.data.assignments = data.assignments || [];
     state.inviteCampaign = data.inviteCampaign || null;
+    state.data.deletedCards = data.deletedCards || [];
   } finally {
     setLoading(false);
   }
@@ -3992,6 +4175,7 @@ elements.sideMenu.addEventListener("click", (event) => {
     (key === "admin-cards" ||
       key === "admin-ev" ||
       key === "admin-banned" ||
+      key === "admin-deleted" ||
       key === "car-assign" ||
       key === "invite-campaign") &&
     (!state.user ||
@@ -4019,7 +4203,8 @@ elements.sideMenu.addEventListener("click", (event) => {
   } else if (
     key === "admin-cards" ||
     key === "admin-ev" ||
-    key === "admin-banned"
+    key === "admin-banned" ||
+    key === "admin-deleted"
   ) {
     if (elements.adminOverlay) {
       elements.adminOverlay.classList.remove("hidden");
@@ -4207,7 +4392,7 @@ if (elements.adminCardDelete) {
         alert(res.message || "구역카드 삭제에 실패했습니다.");
         return;
       }
-      state.data.cards = res.cards || [];
+      await loadData();
       renderAreas();
       renderCards();
       renderAdminPanel();
@@ -4221,12 +4406,13 @@ if (elements.adminCardDelete) {
 if (elements.adminCardDeleted) {
   elements.adminCardDeleted.addEventListener("click", async () => {
     try {
-      const res = await apiRequest("bootstrap", {}, "GET");
-      if (res.error) {
-        alert(res.error || "삭제 카드 목록을 불러오지 못했습니다.");
-        return;
+      await loadData();
+      state.currentMenu = "admin-deleted";
+      if (elements.adminOverlay) {
+        elements.adminOverlay.classList.remove("hidden");
+        document.body.style.overflow = "hidden";
       }
-      const deletedSheet = await apiRequest("deletedCards", {}, "GET");
+      renderAdminPanel();
     } catch (e) {
       alert("삭제 카드 목록을 불러오는 중 오류가 발생했습니다.");
     }
@@ -4510,7 +4696,7 @@ if (elements.completionList) {
           alert(res.message || "구역카드 삭제에 실패했습니다.");
           return;
         }
-        state.data.cards = res.cards || [];
+        await loadData();
         renderAreas();
         renderCards();
         renderAdminPanel();
@@ -4593,6 +4779,76 @@ if (elements.completionList) {
       } finally {
         setLoading(false);
       }
+    }
+  });
+}
+
+if (elements.deletedCardList) {
+  elements.deletedCardList.addEventListener("click", async (event) => {
+    const btn = event.target.closest("button");
+    if (btn && btn.dataset.cardNumber) {
+      const areaId = btn.dataset.areaId || "";
+      const cardNumber = btn.dataset.cardNumber || "";
+      if (!areaId || !cardNumber) {
+        return;
+      }
+      const action = btn.dataset.action || "restore-deleted";
+      if (action === "restore-deleted") {
+        if (
+          !window.confirm(
+            `구역 ${areaId}, 카드 ${cardNumber}를 삭제 목록에서 복원할까요?`
+          )
+        ) {
+          return;
+        }
+        try {
+          setLoading(true, "삭제된 카드를 복원하는 중...");
+          const res = await apiRequest("restoreDeletedCard", {
+            areaId,
+            cardNumber
+          });
+          if (!res.success) {
+            alert(res.message || "삭제 카드 복원에 실패했습니다.");
+            return;
+          }
+          await loadData();
+          renderAreas();
+          renderCards();
+          renderAdminPanel();
+          setStatus("삭제된 카드가 복원되었습니다.");
+        } catch (e) {
+          alert("삭제 카드 복원 중 오류가 발생했습니다.");
+        } finally {
+          setLoading(false);
+        }
+      } else if (action === "purge-deleted") {
+        if (
+          !window.confirm(
+            `구역 ${areaId}, 카드 ${cardNumber}를 삭제 카드 목록에서 영구적으로 삭제할까요?`
+          )
+        ) {
+          return;
+        }
+        try {
+          setLoading(true, "삭제된 카드를 영구 삭제하는 중...");
+          const res = await apiRequest("purgeDeletedCard", {
+            areaId,
+            cardNumber
+          });
+          if (!res.success) {
+            alert(res.message || "삭제 카드 영구 삭제에 실패했습니다.");
+            return;
+          }
+          await loadData();
+          renderAdminPanel();
+          setStatus("삭제된 카드가 영구 삭제되었습니다.");
+        } catch (e) {
+          alert("삭제 카드 영구 삭제 중 오류가 발생했습니다.");
+        } finally {
+          setLoading(false);
+        }
+      }
+      return;
     }
   });
 }

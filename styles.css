@@ -531,7 +531,7 @@ button.secondary {
 
 .card-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
   gap: 12px;
   margin-bottom: 20px;
 }
@@ -1009,6 +1009,34 @@ button.secondary {
   width: 100%;
   min-width: 500px;
   table-layout: fixed;
+}
+
+.deleted-card-box {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+#deleted-card-list .card {
+  width: 100%;
+}
+
+#deleted-card-list .status-badge {
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-weight: 400;
+}
+
+#deleted-card-list .status-badge[data-action="restore-deleted"] {
+  background: #dbeafe; /* 연한 파란색 */
+  color: #1d4ed8;
+}
+
+#deleted-card-list .status-badge[data-action="purge-deleted"] {
+  background: #fee2e2; /* 연한 빨간색 */
+  color: #b91c1c;
 }
 
 .admin-card-table th,
