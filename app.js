@@ -31,6 +31,7 @@ const state = {
   editingVisit: null,
   statusTimer: null,
   scrollToSelectedCard: false,
+  scrollAreaToTop: false,
   participantsToday: [],
   carAssignments: [],
   selectedCards: [],
@@ -229,6 +230,46 @@ const getVisitDateValue = (row) =>
 
 const getVisitCardNumber = (row) => row["카드번호"] || row["구역카드"] || "";
 
+const parseCardNumber = (value) => {
+  const raw = String(value || "").trim();
+  const mPair = raw.match(/(\d+)\s*-\s*(\d+)/);
+  if (mPair) {
+    const area = Number(mPair[1]);
+    const num = Number(mPair[2]);
+    if (!Number.isNaN(area) && !Number.isNaN(num)) {
+      return { raw, area, num };
+    }
+  }
+  const mSingle = raw.match(/(\d+)/);
+  if (mSingle) {
+    const area = Number(mSingle[1]);
+    if (!Number.isNaN(area)) {
+      return { raw, area, num: null };
+    }
+  }
+  return { raw, area: null, num: null };
+};
+
+const compareCardNumbers = (a, b) => {
+  const pa = parseCardNumber(a);
+  const pb = parseCardNumber(b);
+  if (pa.area != null && pb.area != null) {
+    if (pa.area !== pb.area) {
+      return pa.area - pb.area;
+    }
+    if (pa.num != null && pb.num != null && pa.num !== pb.num) {
+      return pa.num - pb.num;
+    }
+    if (pa.num != null && pb.num == null) {
+      return 1;
+    }
+    if (pa.num == null && pb.num != null) {
+      return -1;
+    }
+  }
+  return pa.raw.localeCompare(pb.raw, "ko-KR");
+};
+
 const getCardTownLabel = (card) => {
   const direct = String(card["읍면동"] || "").trim();
   if (direct) {
@@ -249,6 +290,50 @@ const getCardTownLabel = (card) => {
   const rawLabel = String(areaRow["구역번호"] || "");
   const m = rawLabel.match(/\((.+)\)/);
   return m ? m[1].trim() : "";
+};
+
+const isKslArea = (areaId) => {
+  const id = String(areaId || "").trim();
+  if (!id) {
+    return false;
+  }
+  if (id.includes("찾기봉사")) {
+    return true;
+  }
+  const areaRows = state.data.areas || [];
+  const row =
+    areaRows.find((r) => {
+      const raw = String(r["구역번호"] || "").trim();
+      if (!raw) {
+        return false;
+      }
+      return raw === id || raw.startsWith(id + " ") || id.startsWith(raw + " ");
+    }) || null;
+  if (row) {
+    const rowHasKsl = Object.keys(row).some((key) => {
+      const v = row[key];
+      return v != null && String(v).includes("찾기봉사");
+    });
+    if (rowHasKsl) {
+      return true;
+    }
+  }
+  const cards = (state.data.cards || []).filter(
+    (card) => String(card["구역번호"] || card.area || "").trim() === id
+  );
+  if (cards.length) {
+    const cardHasKsl = cards.some((card) => {
+      const num = String(card["카드번호"] || "").trim();
+      const name = String(
+        card["구역이름"] || card["구역명"] || card["구역"] || ""
+      ).trim();
+      return num.includes("찾기") || name.includes("찾기봉사");
+    });
+    if (cardHasKsl) {
+      return true;
+    }
+  }
+  return false;
 };
 
 const parseVisitDate = (value) => {
@@ -351,11 +436,9 @@ const renderMyCarInfo = () => {
   if (cards.length) {
     const labels = cards
       .slice()
-      .sort((a, b) => {
-        const numA = String(a["카드번호"] || "");
-        const numB = String(b["카드번호"] || "");
-        return numA.localeCompare(numB, "ko-KR");
-      })
+      .sort((a, b) =>
+        compareCardNumbers(a["카드번호"] || "", b["카드번호"] || "")
+      )
       .map((card) => String(card["카드번호"] || ""));
     lines.push(`오늘 카드: ${labels.join(", ")}`);
   }
@@ -1207,6 +1290,9 @@ const getFirstInProgressArea = () => {
   const grouped = groupCardsByArea();
   const areaIds = Object.keys(grouped);
   for (const areaId of areaIds) {
+    if (isKslArea(areaId)) {
+      continue;
+    }
     if (!areaCompletionStatus(grouped[areaId])) {
       return areaId;
     }
@@ -1230,6 +1316,7 @@ const renderAreas = () => {
     (state.user.role === "관리자" || state.user.role === "인도자");
   const areasRows = state.data.areas || [];
   let latestCompleteDate = null;
+  let hasTodayInProgress = false;
   areasRows.forEach((row) => {
     const d = row["완료날짜"] ? parseVisitDate(row["완료날짜"]) : null;
     if (d && !Number.isNaN(d.getTime())) {
@@ -1237,6 +1324,13 @@ const renderAreas = () => {
         latestCompleteDate = d;
       }
     }
+     if (
+       row["시작날짜"] &&
+       !row["완료날짜"] &&
+       isSameDay(row["시작날짜"], today)
+     ) {
+       hasTodayInProgress = true;
+     }
   });
   const areaIds = Object.keys(grouped);
   areaIds.forEach((areaId) => {
@@ -1290,12 +1384,13 @@ const renderAreas = () => {
         startText &&
         startText >= inviteInfo.startDate;
       const range = isComplete ? doneText || startText : startText || doneText;
+      const isKsl = isKslArea(areaId);
       if (isComplete || inProgress) {
         const labelParts = [];
         if (range) {
           labelParts.push(range);
         }
-        labelParts.push(isComplete ? "완료" : "시작");
+        labelParts.push(inProgress ? "시작" : "완료");
         const stateChip = document.createElement("span");
         stateChip.className = "area-date-range";
         stateChip.textContent = labelParts.join(" ");
@@ -1317,56 +1412,56 @@ const renderAreas = () => {
       const rightBox = document.createElement("div");
       rightBox.className = "area-header-right";
       let badge = null;
+      let finishTimer = null;
+      const clearFinishTimer = () => {
+        if (finishTimer) {
+          clearTimeout(finishTimer);
+          finishTimer = null;
+        }
+      };
+      const startFinishTimer = () => {
+        if (!(withAssignButton && isLeader && inProgress)) {
+          return;
+        }
+        clearFinishTimer();
+        finishTimer = setTimeout(async () => {
+          finishTimer = null;
+          if (
+            !window.confirm(
+              `구역 ${areaId}의 미방문 카드를 모두 오늘 날짜의 부재로 기록하고 봉사를 완료할까요?`
+            )
+          ) {
+            return;
+          }
+          setLoading(true, "봉사를 완료 처리하는 중...");
+          try {
+            const res = await apiRequest("finishAreaWithoutVisits", {
+              areaId,
+              leaderName: state.user ? state.user.name : ""
+            });
+            if (!res.success) {
+              alert(
+                res.message || "봉사 완료 처리 중 오류가 발생했습니다."
+              );
+              return;
+            }
+            await loadData();
+            renderAreas();
+            renderCards();
+            renderAdminPanel();
+            renderMyCarInfo();
+            setStatus(`구역 ${areaId}의 봉사가 완료 처리되었습니다.`);
+          } finally {
+            setLoading(false);
+          }
+        }, 800);
+      };
       if (inProgress) {
         badge = document.createElement("span");
         badge.className = "status-badge status-badge-progress";
         badge.textContent = "진행중";
         item.classList.add("area-in-progress");
         if (withAssignButton && isLeader) {
-          let finishTimer = null;
-          const clearFinishTimer = () => {
-            if (finishTimer) {
-              clearTimeout(finishTimer);
-              finishTimer = null;
-            }
-          };
-          const startFinishTimer = () => {
-            clearFinishTimer();
-            finishTimer = setTimeout(async () => {
-              finishTimer = null;
-              if (
-                !window.confirm(
-                  `구역 ${areaId}의 미방문 카드를 모두 오늘 날짜의 부재로 기록하고 봉사를 완료할까요?`
-                )
-              ) {
-                return;
-              }
-              setLoading(true, "봉사를 완료 처리하는 중...");
-              try {
-                const res = await apiRequest("finishAreaWithoutVisits", {
-                  areaId,
-                  leaderName: state.user ? state.user.name : ""
-                });
-                if (!res.success) {
-                  alert(
-                    res.message ||
-                      "봉사 완료 처리 중 오류가 발생했습니다."
-                  );
-                  return;
-                }
-                await loadData();
-                renderAreas();
-                renderCards();
-                renderAdminPanel();
-                renderMyCarInfo();
-                setStatus(
-                  `구역 ${areaId}의 봉사가 완료 처리되었습니다.`
-                );
-              } finally {
-                setLoading(false);
-              }
-            }, 800);
-          };
           badge.addEventListener("mousedown", (event) => {
             if (event.button !== 0) {
               return;
@@ -1383,6 +1478,28 @@ const renderAreas = () => {
               badge.addEventListener(type, clearFinishTimer);
             }
           );
+          headerRow.addEventListener("mousedown", (event) => {
+            if (event.button !== 0) {
+              return;
+            }
+            if (event.target.closest(".area-header-right")) {
+              return;
+            }
+            event.stopPropagation();
+            startFinishTimer();
+          });
+          headerRow.addEventListener("touchstart", (event) => {
+            if (event.target.closest(".area-header-right")) {
+              return;
+            }
+            event.stopPropagation();
+            startFinishTimer();
+          });
+          ["mouseup", "mouseleave", "touchend", "touchcancel"].forEach(
+            (type) => {
+              headerRow.addEventListener(type, clearFinishTimer);
+            }
+          );
         }
       }
       if (isInviteArea) {
@@ -1396,11 +1513,12 @@ const renderAreas = () => {
         isComplete &&
         latestCompleteDate &&
         areaCompleteDate &&
-        areaCompleteDate.getTime() === latestCompleteDate.getTime()
+        areaCompleteDate.getTime() === latestCompleteDate.getTime() &&
+        !hasTodayInProgress
       ) {
         item.classList.add("area-last-complete");
       }
-      if (withAssignButton && inProgress && isLeader) {
+      if (withAssignButton && inProgress && isLeader && !isKsl) {
         const assignBtn = document.createElement("button");
         assignBtn.type = "button";
         assignBtn.textContent = "차량배정";
@@ -1496,6 +1614,7 @@ const renderAreas = () => {
       const showStartButton =
         withAssignButton &&
         hasDone &&
+        !isKsl &&
         state.user &&
         (state.user.role === "인도자" || state.user.role === "관리자");
       if (showStartButton) {
@@ -1585,12 +1704,19 @@ const renderCards = () => {
       startDate = parsed;
     }
   }
+  const currentAreaId =
+    state.filterArea && state.filterArea !== "all"
+      ? String(state.filterArea)
+      : state.selectedArea
+      ? String(state.selectedArea)
+      : "";
+  const isKslCurrentArea =
+    currentAreaId && isKslArea(currentAreaId) ? true : false;
   const canAssignFromCardsPanel =
     state.user &&
     (state.user.role === "관리자" || state.user.role === "인도자") &&
-    areaInfo &&
-    areaInfo["시작날짜"] &&
-    !areaInfo["완료날짜"];
+    currentAreaId &&
+    (isKslCurrentArea || isInProgress);
   let cards = rawCards.slice();
   const query = state.searchQuery.trim();
   const shouldHideAll =
@@ -1703,12 +1829,12 @@ const renderCards = () => {
       const na = String(a["카드번호"] || "");
       const nb = String(b["카드번호"] || "");
       if (na !== nb) {
-        return na.localeCompare(nb);
+        return compareCardNumbers(na, nb);
       }
     }
     const na = String(a["카드번호"] || "");
     const nb = String(b["카드번호"] || "");
-    return na.localeCompare(nb);
+    return compareCardNumbers(na, nb);
   });
   cards.forEach((card) => {
     const cardEl = document.createElement("div");
@@ -2029,7 +2155,7 @@ const renderCards = () => {
       expanded.appendChild(container);
     }
     container.appendChild(elements.cardList);
-    if (!state.scrollToSelectedCard) {
+    if (state.scrollAreaToTop && !state.scrollToSelectedCard) {
       expanded.scrollIntoView({ behavior: "smooth", block: "start" });
     }
   } else {
@@ -2054,6 +2180,7 @@ const renderCards = () => {
     }
   }
   state.scrollToSelectedCard = false;
+  state.scrollAreaToTop = false;
 };
 
 const renderVisitsView = () => {
@@ -2825,6 +2952,7 @@ const selectArea = (areaId) => {
   state.selectedArea = areaId;
   state.selectedCard = null;
    state.selectedCards = [];
+  state.scrollAreaToTop = true;
   elements.areaTitle.textContent = `구역 ${areaId}`;
   renderAreas();
   renderCards();
@@ -2894,6 +3022,7 @@ const enterDashboard = async (user) => {
       state.expandedAreaId = inProgressAreaId;
       state.filterArea = inProgressAreaId;
       state.selectedArea = inProgressAreaId;
+      state.scrollAreaToTop = true;
     }
   }
   renderAreas();
@@ -4405,7 +4534,8 @@ if (elements.carAssignAssignCards) {
       .filter((row) => {
         const start = row["시작날짜"];
         const done = row["완료날짜"];
-        return start && !done;
+        const areaId = String(row["구역번호"] || "");
+        return start && !done && !isKslArea(areaId);
       })
       .map((row) => String(row["구역번호"] || ""));
     if (!targetAreaIds.length) {
@@ -4437,10 +4567,7 @@ if (elements.carAssignAssignCards) {
         );
       })
         .sort((a, b) =>
-          String(a["카드번호"] || "").localeCompare(
-            String(b["카드번호"] || ""),
-            "ko-KR"
-          )
+          compareCardNumbers(a["카드번호"] || "", b["카드번호"] || "")
         )
     }));
     const totalCards = areaCardsList.reduce(
