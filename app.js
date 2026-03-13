@@ -2015,63 +2015,79 @@ const renderCards = () => {
     }
     cardEl.appendChild(nav);
     if (state.user && state.user.role === "관리자") {
-      let deletePressTimer = null;
-      const clearDeletePress = () => {
-        if (deletePressTimer) {
-          clearTimeout(deletePressTimer);
-          deletePressTimer = null;
-        }
-      };
-      const startDeletePress = () => {
-        clearDeletePress();
-        deletePressTimer = setTimeout(async () => {
-          deletePressTimer = null;
-          const areaId = String(card["구역번호"] || "");
-          const cardNumber = String(card["카드번호"] || "");
-          if (
-            !areaId ||
-            !cardNumber ||
-            !window.confirm(
-              `구역 ${areaId}, 카드 ${cardNumber}를 삭제하고 삭제 시트로 이동할까요?`
-            )
-          ) {
-            return;
-          }
-          try {
-            setLoading(true, "카드를 삭제하는 중...");
-            const res = await apiRequest("deleteCard", {
-              areaId,
-              cardNumber
-            });
-            if (!res.success) {
-              alert(res.message || "구역카드 삭제에 실패했습니다.");
-              return;
-            }
-            await loadData();
-            renderAreas();
-            renderCards();
-            renderAdminPanel();
-            setStatus("구역카드가 삭제되었습니다.");
-          } catch (e) {
-            alert("구역카드 삭제 중 오류가 발생했습니다.");
-          } finally {
-            setLoading(false);
-          }
-        }, 800);
-      };
-      title.addEventListener("mousedown", (event) => {
-        if (event.button !== 0) {
+      let swipeStartX = null;
+      let swipeStartY = null;
+      let swipeStartTime = 0;
+      cardEl.addEventListener("touchstart", (event) => {
+        if (!event.touches || !event.touches.length) {
           return;
         }
-        event.stopPropagation();
-        startDeletePress();
+        const t = event.touches[0];
+        swipeStartX = t.clientX;
+        swipeStartY = t.clientY;
+        swipeStartTime = Date.now();
       });
-      title.addEventListener("touchstart", (event) => {
-        event.stopPropagation();
-        startDeletePress();
-      });
-      ["mouseup", "mouseleave", "touchend", "touchcancel"].forEach((type) => {
-        title.addEventListener(type, clearDeletePress);
+      cardEl.addEventListener("touchend", async (event) => {
+        if (
+          swipeStartX == null ||
+          !event.changedTouches ||
+          !event.changedTouches.length
+        ) {
+          return;
+        }
+        const t = event.changedTouches[0];
+        const dx = t.clientX - swipeStartX;
+        const dy = t.clientY - swipeStartY;
+        swipeStartX = null;
+        swipeStartY = null;
+        const dt = Date.now() - swipeStartTime;
+        const absDx = Math.abs(dx);
+        const absDy = Math.abs(dy);
+        if (
+          absDx < 60 ||
+          absDx < absDy * 2 ||
+          dt > 800
+        ) {
+          return;
+        }
+        if (
+          !state.selectedCard ||
+          String(state.selectedCard["카드번호"] || "") !==
+            String(card["카드번호"] || "")
+        ) {
+          return;
+        }
+        const areaId = String(card["구역번호"] || "");
+        const cardNumber = String(card["카드번호"] || "");
+        if (
+          !areaId ||
+          !cardNumber ||
+          !window.confirm(
+            `구역 ${areaId}, 카드 ${cardNumber}를 삭제하고 삭제 시트로 이동할까요?`
+          )
+        ) {
+          return;
+        }
+        try {
+          setLoading(true, "카드를 삭제하는 중...");
+          const res = await apiRequest("deleteCard", {
+            areaId,
+            cardNumber
+          });
+          if (!res.success) {
+            alert(res.message || "구역카드 삭제에 실패했습니다.");
+            return;
+          }
+          await loadData();
+          renderAreas();
+          renderCards();
+          renderAdminPanel();
+          setStatus("구역카드가 삭제되었습니다.");
+        } catch (e) {
+          alert("구역카드 삭제 중 오류가 발생했습니다.");
+        } finally {
+          setLoading(false);
+        }
       });
     }
     if (state.selectedCard && card["카드번호"] === state.selectedCard["카드번호"]) {
